@@ -77,6 +77,22 @@ How the system works, how trust is built, and how it could be implemented.
 
 ---
 
+## Pre-MVP Research
+
+Research conducted to inform MVP definition. All documents have detailed findings with citations.
+
+- **[Research Summary](docs/research-summary.md)** — consolidated findings, key decisions, cost estimates, success criteria, and next steps.
+- **[Iran Pilot Community](docs/research-iran-pilot-community.md)** — why Iran, trust landscape, messaging apps, safety considerations, and design implications.
+- **[Canonicalization Evaluation](docs/research-llm-canonicalization-evaluation.md)** — how to evaluate LLM text structuring, metrics, schema design, failure modes.
+- **[Action Types & Templates](docs/research-action-types-templates.md)** — what civic actions to support, template design, diaspora advocacy, platform constraints.
+- **[Identity & Sybil Resistance](docs/research-identity-sybil-resistance.md)** — verification tiers, multi-signal scoring, authoritarian context safety.
+- **[Transparency Log Implementations](docs/research-transparency-log-implementations.md)** — Trillian vs Rekor vs SCITT vs simpler approaches.
+- **[Legal & Regulatory](docs/research-legal-regulatory.md)** — OFAC, GDPR, platform ToS, FARA, legal structure.
+- **[LLM Cost Analysis](docs/research-llm-cost-analysis.md)** — validated cost model, local vs cloud, scale scenarios.
+- **[Success Metrics & Failure Conditions](docs/research-success-metrics-failure-conditions.md)** — what to measure, kill criteria, prior art lessons.
+
+---
+
 ## Contributing
 
 Read **[CONTRIBUTING.md](CONTRIBUTING.md)**.

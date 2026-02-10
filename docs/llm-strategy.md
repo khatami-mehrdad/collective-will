@@ -51,6 +51,23 @@ Research shows ~80% of real-world queries can be handled by local models (≤20B
 | **Llama 4 Scout** | 17B (16 experts) | 10M | ~12GB | Best multimodal in class; single H100. |
 | **Qwen3-Coder-30B-A3B** | 3.3B (30B MoE) | 256K→1M | ~17GB | Coding specialist; only 3.3B active — runs like a small model. |
 
+### Hardware requirements: best local (MiMo-V2-Flash)
+
+The best quality/cost local option in the table above is **MiMo-V2-Flash**. Recommended hardware:
+
+| Component | Minimum | Recommended |
+|-----------|---------|-------------|
+| **GPU VRAM** | 8GB (heavy quantization) | **24GB** (e.g. RTX 3090, RTX 4090, RTX 5090) |
+| **System RAM** | 16GB | 32–64GB |
+| **Storage** | 100GB | 200GB+ NVMe SSD |
+| **GPU** | NVIDIA (CUDA); 12GB for comfortable single-GPU | Single 24GB card (no multi-GPU required) |
+
+- **8GB VRAM:** Possible with aggressive quantization; expect slower inference and lower quality.
+- **12GB VRAM:** Usable (e.g. RTX 3060 12GB); may need quantized weights and reduced batch/context.
+- **24GB VRAM:** Sweet spot for full context (256K) and good throughput with vLLM or SGLang.
+
+For **Qwen3-8B** (cheapest viable local): ~5GB VRAM (Q4), 8GB RAM; runs on RTX 3060/4060 or similar.
+
 ### DeepSeek V4 (Upcoming)
 
 - **Expected:** Mid-February 2026 (around Feb 17, Lunar New Year). Not officially confirmed.
