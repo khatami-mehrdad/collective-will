@@ -66,6 +66,14 @@ Start with **[Architecture](docs/architecture.md)** — the full pipeline from s
 
 Start with **[Roadmap](docs/roadmap.md)** — what v0 includes, what's deliberately excluded and why, the direction after v0, and open questions about what success looks like.
 
+### "What else is out there?"
+
+Read **[Landscape & Prior Art](docs/landscape.md)** — a survey of existing tools and projects that overlap with parts of this system (Polis, Talk to the City, DCAN, Resistbot, Decidim, and others), what they do well, where they stop, and what it means for this project.
+
+### "How could this actually get built?"
+
+Read **[OpenClaw as Infrastructure](docs/openclaw-as-infrastructure.md)** — how OpenClaw's multi-agent architecture, channel integrations, skills system, and memory model could serve as the foundation for a v0, what we'd get for free, and what we'd still need to build.
+
 ### "I want to contribute"
 
 Read **[CONTRIBUTING.md](CONTRIBUTING.md)**.
