@@ -121,12 +121,12 @@ Iranians don't know what other Iranians want. The regime controls public discour
                               │ receives messages
                               │
 ┌──────────────────────────────────────────────────────────────────┐
-│                    MESSAGING GATEWAY                              │
+│                    MESSAGING GATEWAY (Python)                     │
 │  ┌──────────────────────────────────────────────────────────┐   │
-│  │                    OpenClaw Gateway                       │   │
+│  │                    FastAPI + Channels                     │   │
 │  │  ┌─────────┐  ┌─────────┐  ┌─────────┐                   │   │
 │  │  │WhatsApp │  │Telegram │  │ Signal  │                   │   │
-│  │  │ Channel │  │ Channel │  │ Channel │                   │   │
+│  │  │(Evo API)│  │  (PTB)  │  │(sig-cli)│                   │   │
 │  │  └─────────┘  └─────────┘  └─────────┘                   │   │
 │  └──────────────────────────────────────────────────────────┘   │
 └──────────────────────────────────────────────────────────────────┘
@@ -154,42 +154,41 @@ Iranians don't know what other Iranians want. The regime controls public discour
 
 **Purpose**: Interface with WhatsApp (primary), Telegram, Signal. Normalize messages into common format.
 
-**Technology Choice**: **OpenClaw**
+**Technology Choice**: **Direct channel integrations (Python)**
 
-**Why OpenClaw**:
-- Already has WhatsApp, Telegram, Signal integrations
-- Multi-agent architecture fits our pipeline (canonicalizer, clusterer as separate agents)
-- Hooks system enables audit logging at every step
-- MIT licensed, can fork/extend
-- Runs locally — no vendor dependency
+**Why direct integrations over a framework (like OpenClaw)**:
+- Full control over code that runs — critical for a civic platform with security/trust requirements
+- No framework lock-in or unexpected upstream changes
+- Simpler architecture — only the code we need, nothing more
+- Better auditability — every line is ours to inspect and explain
+- Python ecosystem for AI/clustering is superior
 
-**What we customize**:
-- Add user verification flow (account linking)
-- Add voting interaction flow
-- Connect to our database instead of OpenClaw's memory system
+**Channel libraries**:
+- **WhatsApp**: Evolution API (self-hosted gateway) — handles Baileys complexity, exposes REST/webhooks
+- **Telegram**: python-telegram-bot — mature, well-documented, 25k+ stars
+- **Signal**: signal-cli + signal-bot wrapper — signal-cli is the actively maintained option
 
 **Key Components**:
 
 ```
-messaging-gateway/
-├── agents/
-│   ├── intake/              # Receives submissions
-│   │   ├── AGENT.md
-│   │   └── tools/
-│   ├── voting/              # Sends vote prompts, receives votes
-│   │   ├── AGENT.md
-│   │   └── tools/
-│   └── notifications/       # Sends updates to users
-│       ├── AGENT.md
-│       └── tools/
+src/
 ├── channels/
-│   ├── whatsapp/
-│   ├── telegram/
-│   └── signal/
-├── hooks/
-│   ├── message_received/    # Log to evidence store
-│   └── message_sent/        # Log to evidence store
-└── config.yaml
+│   ├── __init__.py
+│   ├── base.py              # Abstract channel interface
+│   ├── whatsapp.py          # Evolution API client
+│   ├── telegram.py          # python-telegram-bot wrapper
+│   ├── signal.py            # signal-cli wrapper
+│   └── types.py             # Unified message format
+├── handlers/
+│   ├── __init__.py
+│   ├── intake.py            # Receives submissions
+│   ├── voting.py            # Sends vote prompts, receives votes
+│   └── notifications.py     # Sends updates to users
+├── middleware/
+│   ├── __init__.py
+│   ├── audit.py             # Log to evidence store
+│   └── validation.py        # Input validation
+└── config.py
 ```
 
 **Design Decisions**:
@@ -873,8 +872,8 @@ User visits /dashboard
 
 | Layer | Technology | Rationale |
 |-------|------------|-----------|
-| **Messaging Gateway** | OpenClaw (TypeScript) | Multi-platform, agent architecture, hooks |
-| **AI Pipeline** | Python | Better ML ecosystem (transformers, HDBSCAN) |
+| **Messaging Gateway** | Python (FastAPI) | Direct channel control, unified codebase with pipeline |
+| **AI Pipeline** | Python | Best ML ecosystem (transformers, HDBSCAN, scikit-learn) |
 | **Database** | PostgreSQL + pgvector | Mature, embeddings, JSONB |
 | **Website** | Next.js (TypeScript) | SSR, React, good i18n |
 | **Hosting** | Single VPS (Hetzner/DigitalOcean) | Simple, cheap, EU-based for GDPR |
@@ -885,137 +884,174 @@ User visits /dashboard
 
 ### 6.2 Language Choices
 
-**TypeScript** for:
-- Messaging Gateway (OpenClaw is TypeScript)
-- Website (Next.js)
-- Shared type definitions
-
-**Python** for:
+**Python** for (primary language):
+- Messaging Gateway (FastAPI + channel libraries)
 - AI Pipeline (canonicalization, clustering)
-- Better ecosystem: transformers, sentence-transformers, hdbscan, scikit-learn
+- Best ecosystem: transformers, sentence-transformers, hdbscan, scikit-learn
+- python-telegram-bot, httpx for Evolution API
+- Unified codebase — simpler deployment, shared utilities
+
+**TypeScript** for:
+- Website (Next.js) — SSR benefits, React ecosystem
+- Frontend components
+
+**Why Python-first**:
+- Clustering and embeddings are core to the pipeline — Python owns this space
+- AI/LLM libraries are Python-first (Anthropic SDK, sentence-transformers)
+- More readable/auditable — important for civic trust
+- Single backend language simplifies deployment and maintenance
+- Channel integrations work well in Python (python-telegram-bot is excellent)
 
 **Shared**:
-- Data models defined in TypeScript, exported as JSON Schema
-- Python validates against same schema
+- Data models defined in Python (Pydantic), exported as JSON Schema for TypeScript
 - Database is source of truth
 
-### 6.3 TypeScript Security & Memory Guidelines
+### 6.3 Python Security & Best Practices
 
-TypeScript is chosen for speed-to-MVP, but we treat it as a liability to manage, not a guarantee of safety.
+Python is chosen for its excellent ML/AI ecosystem and readability. We treat dependencies as a liability to manage.
 
 #### Dependency Security
 
 | Practice | Implementation |
 |----------|----------------|
-| **Minimal dependencies** | Every npm package is a risk; justify each one |
-| **Lock versions** | Use `package-lock.json`; pin exact versions |
-| **Audit regularly** | Run `npm audit` in CI; block deploys on critical vulns |
+| **Minimal dependencies** | Every pip package is a risk; justify each one |
+| **Lock versions** | Use `uv.lock` or `poetry.lock`; pin exact versions |
+| **Audit regularly** | Run `pip-audit` or `safety` in CI; block deploys on critical vulns |
 | **Avoid deep trees** | Prefer packages with few transitive dependencies |
-| **No postinstall scripts** | Disable with `ignore-scripts=true` where possible |
+| **Virtual environments** | Always use venv/uv; never install globally |
 
 #### Memory Management
 
 | Practice | Implementation |
 |----------|----------------|
-| **Monitor heap usage** | Use `--max-old-space-size` flag; alert on threshold |
-| **Avoid memory leaks** | No global caches that grow unbounded; use WeakMap where appropriate |
-| **Stream large data** | Don't load full evidence store into memory; use cursors/pagination |
+| **Stream large data** | Use generators/iterators; don't load full evidence store into memory |
+| **Connection pooling** | Use SQLAlchemy connection pools; configure pool size appropriately |
 | **Profile under load** | Test with realistic message volume before launch |
-| **Set timeouts** | All external calls (DB, API) have timeouts; prevent hung connections |
+| **Set timeouts** | All external calls (DB, API) have timeouts via `httpx` or `asyncio.timeout` |
+| **Async where appropriate** | Use `asyncio` for I/O-bound operations (API calls, DB queries) |
 
 #### Secure Coding Practices
 
 | Practice | Implementation |
 |----------|----------------|
-| **Strict TypeScript** | `"strict": true` in tsconfig; no `any` types |
-| **Input validation** | Validate all user input with Zod or similar; never trust messaging payloads |
-| **No eval/Function** | Never execute dynamic code |
-| **Parameterized queries** | Use query builders (Kysely, Drizzle); no string concatenation for SQL |
+| **Type hints** | Use type hints everywhere; run `mypy` in strict mode |
+| **Input validation** | Validate all user input with Pydantic; never trust messaging payloads |
+| **No eval/exec** | Never execute dynamic code |
+| **Parameterized queries** | Use SQLAlchemy ORM or parameterized queries; no string concatenation for SQL |
 | **Secrets management** | Environment variables only; never in code; rotate regularly |
-| **Rate limiting** | On all endpoints; prevent abuse |
+| **Rate limiting** | Use FastAPI middleware or `slowapi`; prevent abuse |
 
 #### Crypto Operations
 
 | Operation | Approach |
 |-----------|----------|
-| **Hashing (evidence store)** | Use Node.js built-in `crypto` module (C++ bindings), not npm packages |
-| **Future: signatures** | Consider calling Go/Rust microservice for signing operations |
-| **Random generation** | Use `crypto.randomUUID()`, not `Math.random()` |
+| **Hashing (evidence store)** | Use Python built-in `hashlib` (C bindings); SHA-256 for evidence chain |
+| **Future: signatures** | Use `cryptography` library (well-audited) or call Rust service |
+| **Random generation** | Use `secrets` module, not `random` |
+
+#### Code Quality
+
+| Tool | Purpose |
+|------|---------|
+| **ruff** | Fast linting and formatting |
+| **mypy** | Static type checking |
+| **pytest** | Testing |
+| **pre-commit** | Enforce checks before commit |
 
 #### Migration Path (If Needed at Scale)
 
-If we reach scale where TypeScript becomes a bottleneck or security liability:
+If we reach scale where Python becomes a bottleneck:
 
 1. **Evidence store service** → Rewrite in Rust (crypto operations, append-only log)
-2. **Message routing** → Rewrite in Go (high-concurrency, low-latency)
-3. **Keep TypeScript for** → Web frontend, admin interfaces, non-critical paths
+2. **Hot paths** → Rewrite specific endpoints in Go/Rust if profiling shows need
+3. **Keep Python for** → AI pipeline, clustering, LLM integration (Python wins here)
 
 Design interfaces now (via API boundaries) so these rewrites are possible without full system redesign.
 
-### 6.4 Monorepo Structure
+### 6.4 Project Structure
 
 ```
 collective-will/
-├── packages/
-│   ├── types/                    # Shared TypeScript types
-│   │   ├── src/
-│   │   │   ├── user.ts
-│   │   │   ├── submission.ts
-│   │   │   ├── cluster.ts
-│   │   │   └── index.ts
-│   │   └── package.json
+├── src/                          # Python backend (main application)
+│   ├── __init__.py
 │   │
-│   ├── database/                 # Database schema, migrations
-│   │   ├── migrations/
-│   │   ├── schema.sql
-│   │   └── package.json
+│   ├── channels/                 # Messaging channel integrations
+│   │   ├── __init__.py
+│   │   ├── base.py              # Abstract channel interface
+│   │   ├── whatsapp.py          # Evolution API client
+│   │   ├── telegram.py          # python-telegram-bot wrapper
+│   │   ├── signal.py            # signal-cli wrapper
+│   │   └── types.py             # Unified message format
 │   │
-│   └── shared/                   # Shared utilities
-│       ├── src/
-│       │   ├── hash.ts
-│       │   └── evidence.ts
-│       └── package.json
+│   ├── handlers/                 # Message handlers
+│   │   ├── __init__.py
+│   │   ├── intake.py            # Receives submissions
+│   │   ├── voting.py            # Sends vote prompts, receives votes
+│   │   └── notifications.py     # Sends updates to users
+│   │
+│   ├── pipeline/                 # AI processing pipeline
+│   │   ├── __init__.py
+│   │   ├── canonicalize.py      # LLM canonicalization
+│   │   ├── cluster.py           # HDBSCAN clustering
+│   │   ├── embeddings.py        # sentence-transformers
+│   │   └── agenda.py            # Agenda building
+│   │
+│   ├── models/                   # Pydantic data models
+│   │   ├── __init__.py
+│   │   ├── user.py
+│   │   ├── submission.py
+│   │   ├── cluster.py
+│   │   └── vote.py
+│   │
+│   ├── db/                       # Database layer
+│   │   ├── __init__.py
+│   │   ├── connection.py
+│   │   ├── evidence.py          # Evidence store operations
+│   │   └── queries.py
+│   │
+│   ├── api/                      # FastAPI application
+│   │   ├── __init__.py
+│   │   ├── main.py              # FastAPI app
+│   │   ├── routes/
+│   │   │   ├── webhooks.py      # Channel webhooks
+│   │   │   ├── analytics.py     # Public analytics API
+│   │   │   └── user.py          # User dashboard API
+│   │   └── middleware/
+│   │       ├── audit.py
+│   │       └── auth.py
+│   │
+│   ├── scheduler.py              # Background job scheduler
+│   └── config.py                 # Configuration management
 │
-├── apps/
-│   ├── gateway/                  # OpenClaw-based messaging gateway
-│   │   ├── agents/
-│   │   │   ├── intake/
-│   │   │   ├── voting/
-│   │   │   └── notifications/
-│   │   ├── channels/
-│   │   ├── hooks/
-│   │   ├── src/
-│   │   │   └── db.ts            # Database client
-│   │   ├── config.yaml
-│   │   └── package.json
-│   │
-│   ├── pipeline/                 # Python AI pipeline
-│   │   ├── agents/
-│   │   │   ├── canonicalize.py
-│   │   │   ├── cluster.py
-│   │   │   └── agenda.py
-│   │   ├── models/
-│   │   │   └── embeddings.py
-│   │   ├── scheduler.py         # Cron-like job runner
-│   │   ├── requirements.txt
-│   │   └── pyproject.toml
-│   │
-│   └── web/                      # Next.js website
-│       ├── app/
-│       │   ├── page.tsx         # Landing
-│       │   ├── analytics/
-│       │   ├── dashboard/
-│       │   └── api/
-│       ├── components/
-│       ├── lib/
-│       ├── messages/            # i18n strings
-│       │   ├── fa.json
-│       │   └── en.json
-│       └── package.json
+├── migrations/                   # Database migrations (Alembic)
+│   ├── versions/
+│   └── alembic.ini
+│
+├── web/                          # Next.js website
+│   ├── app/
+│   │   ├── page.tsx             # Landing
+│   │   ├── analytics/
+│   │   ├── dashboard/
+│   │   └── api/                 # API routes (proxied to Python backend)
+│   ├── components/
+│   ├── lib/
+│   ├── messages/                # i18n strings
+│   │   ├── fa.json
+│   │   └── en.json
+│   ├── package.json
+│   └── tsconfig.json
+│
+├── tests/                        # Python tests
+│   ├── __init__.py
+│   ├── test_channels/
+│   ├── test_pipeline/
+│   └── test_api/
 │
 ├── docs/                         # Documentation (existing)
 ├── docker-compose.yml            # Local development
 ├── docker-compose.prod.yml       # Production
+├── pyproject.toml                # Python project config (uv/poetry)
+├── requirements.txt              # Pinned dependencies
 └── README.md
 ```
 
@@ -1023,21 +1059,28 @@ collective-will/
 
 ```bash
 # Prerequisites
-- Node.js 20+
 - Python 3.11+
+- Node.js 20+ (for website only)
 - PostgreSQL 15+
 - Docker (optional, for easy setup)
+- uv (recommended) or pip for Python dependency management
 
 # Quick start
-docker-compose up -d postgres
-pnpm install
-pnpm db:migrate
-pnpm dev                          # Starts all services
+docker-compose up -d postgres      # Start database
+uv sync                            # Install Python dependencies
+alembic upgrade head               # Run migrations
+uv run python -m src.api.main      # Start FastAPI backend
 
-# Or individually:
-pnpm --filter gateway dev
-pnpm --filter web dev
-cd apps/pipeline && python -m scheduler
+# In another terminal (for website):
+cd web && pnpm install && pnpm dev
+
+# Or run everything with Docker:
+docker-compose up -d
+
+# Individual services:
+uv run python -m src.api.main      # API server
+uv run python -m src.scheduler     # Background jobs
+cd web && pnpm dev                 # Website
 ```
 
 ### 6.6 Production Deployment
@@ -1054,16 +1097,16 @@ Internet → Cloudflare (DNS/CDN) → Hetzner VPS
                     ┌─────────────────┼─────────────────┐
                     │                 │                 │
                     ▼                 ▼                 ▼
-                  nginx ──────► web (Next.js)     gateway
-                    │               │            (OpenClaw)
+                  nginx ──────► web (Next.js)      backend
+                    │               │             (FastAPI)
                     │               │                 │
                     │               └────────┬────────┘
                     │                        ▼
                     │                    postgres
                     │                   (pgvector)
                     │                        │
-                    └──► pipeline ───────────┘
-                        (Python AI)
+                    └──► scheduler ──────────┘
+                        (background jobs)
 ```
 
 **Recommended Setup:**
@@ -1158,14 +1201,26 @@ See **[Operational Security Guide](operational-security.md)** for implementation
 
 ---
 
-### 7.1 Why OpenClaw for Messaging
+### 7.1 Why Direct Channel Integrations (Not a Framework)
 
 | Alternative | Pros | Cons | Decision |
 |-------------|------|------|----------|
-| **Build custom** | Full control | Months of work on WhatsApp integration | ❌ |
-| **OpenClaw** | Ready integrations, agent model fits | Learning curve, may need customization | ✅ |
-| **Twilio + custom** | Well-documented API | Higher cost, still need agent logic | ❌ |
-| **Matrix/Mautrix** | Open protocol | Worse WhatsApp support | ❌ |
+| **OpenClaw** | Ready integrations, agent model | Framework lock-in, TypeScript, security model for personal use not civic platforms | ❌ |
+| **Automagik Omni** | Multi-channel hub, Python | Newer project, another dependency | ❌ |
+| **Twilio + custom** | Well-documented API | Higher cost, vendor dependency | ❌ |
+| **Direct libraries** | Full control, Python-native, auditable | Some integration work | ✅ |
+
+**Why we chose direct integrations:**
+- **Security**: Full control over what code runs — critical for civic trust
+- **Auditability**: Every line is ours to inspect and explain
+- **Simplicity**: Only the code we need, no framework ecosystem
+- **Python ecosystem**: Unified codebase with AI/clustering pipeline
+- **No upstream risk**: Framework changes don't affect us
+
+**Channel-specific choices:**
+- **WhatsApp**: Evolution API (self-hosted gateway) wraps Baileys complexity, exposes clean REST/webhooks
+- **Telegram**: python-telegram-bot — excellent library, 25k+ stars, well-maintained
+- **Signal**: signal-cli + Python wrapper — the actively maintained option for Signal bots
 
 ### 7.2 Why PostgreSQL (not specialized stores)
 
@@ -1312,9 +1367,9 @@ Per research: Iranian SIAM system uses phone numbers for surveillance. Platform 
 
 ### Must Resolve Before Build
 
-1. **WhatsApp Business API access** — Need approved business account. What's the lead time? Cost? Alternatives if rejected?
+1. **WhatsApp Business API access** — Need approved business account. What's the lead time? Cost? Alternatives if rejected? (Alternative: use Evolution API with Baileys for WhatsApp Web protocol)
 
-2. **OpenClaw customization scope** — How much modification needed? Fork or plugin? Who maintains?
+2. **Evolution API deployment** — Self-hosted WhatsApp gateway. Docker setup, connection stability, reconnection handling.
 
 3. **Cluster summary quality** — Need sample data to test. Where do we get realistic Farsi policy submissions for development?
 
@@ -1393,9 +1448,10 @@ GET  /api/evidence/chain              # Public: verify hash chain integrity
 ## Appendix D: Milestones
 
 ### Milestone 1: Foundation (Week 1-2)
-- [ ] Set up monorepo structure
-- [ ] PostgreSQL schema + migrations
-- [ ] Basic OpenClaw gateway with WhatsApp
+- [ ] Set up Python project structure
+- [ ] PostgreSQL schema + migrations (Alembic)
+- [ ] FastAPI skeleton with health check
+- [ ] Evolution API setup for WhatsApp
 - [ ] "Hello world" message round-trip
 
 ### Milestone 2: Pipeline (Week 3-4)

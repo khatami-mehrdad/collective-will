@@ -1,10 +1,26 @@
-# OpenClaw as Infrastructure
+# Channel Integration Research
 
-How [OpenClaw](https://github.com/openclaw) — an open-source, local-first agentic AI assistant — could serve as foundational infrastructure for Collective Will, and what ideas from its architecture are worth stealing.
+> **Decision (Feb 2026)**: After evaluating OpenClaw and other frameworks, we decided to use **direct channel integrations in Python** rather than adopting a framework. This document preserves the research and explains the decision.
 
 ---
 
-## Background
+## Summary of Decision
+
+| Option | Evaluated | Decision |
+|--------|-----------|----------|
+| **OpenClaw** | Multi-agent framework with channel integrations | ❌ Framework lock-in, TypeScript, security model designed for personal use |
+| **Automagik Omni** | Python multi-channel hub | ❌ Another dependency, newer project |
+| **Direct libraries** | Baileys (via Evolution API), python-telegram-bot, signal-cli | ✅ Full control, Python-native, auditable |
+
+**Why we chose direct integrations:**
+- **Security**: Full control over code — critical for civic trust
+- **Auditability**: Every line is ours to inspect
+- **Python ecosystem**: Unified codebase with AI/clustering pipeline
+- **No framework risk**: Upstream changes don't affect us
+
+---
+
+## OpenClaw Background (Research)
 
 OpenClaw (formerly Clawdbot / Moltbot) is an open-source AI agent gateway that runs locally and connects to messaging platforms (WhatsApp, Telegram, Signal, Discord, Slack, iMessage, and more). It supports multiple isolated agents, each with their own persona, skills, tools, memory, and sandboxed execution. A single gateway process orchestrates everything.
 
@@ -180,28 +196,43 @@ OpenClaw's security architecture addresses concerns raised in the Collective Wil
 
 ---
 
-## A Possible v0 Path
+## Chosen v0 Path
 
-Build Collective Will's v0 as **a set of OpenClaw agents and skills** running on a single gateway:
+Build Collective Will's v0 with **direct Python channel integrations** and a unified backend:
 
-1. **Intake**: users submit concerns via WhatsApp/Telegram/Signal (OpenClaw channels)
-2. **Canonicalization**: a dedicated agent processes submissions using an LLM skill
-3. **Clustering**: another agent groups canonicalized concerns using a clustering skill
-4. **Agenda**: results published to a simple web page (built separately, reading from the evidence store)
-5. **Voting**: minimal voting mechanism (could start as simple as reactions in a group chat, or a basic web form)
-6. **Action**: action-planning agent drafts letters/emails using civic action skills; users approve via their messaging app
-7. **Execution**: executor agent sends approved actions and logs receipts
-8. **Auditability**: hooks log every step to markdown files with timestamps
+1. **Intake**: users submit concerns via WhatsApp/Telegram/Signal (direct channel libraries)
+2. **Canonicalization**: FastAPI endpoint calls LLM, stores structured result
+3. **Clustering**: Background job using HDBSCAN + sentence-transformers
+4. **Agenda**: Next.js website reads from PostgreSQL
+5. **Voting**: Voting flow via messaging channels + web dashboard
+6. **Action**: (v1) action-planning using LLM templates
+7. **Auditability**: Evidence store with hash chain in PostgreSQL
 
-This lets us validate the pipeline design with real users before committing to custom infrastructure. If it works, we can decide later whether to stay on OpenClaw, fork relevant pieces, or build something purpose-built.
+**Channel stack:**
+- **WhatsApp**: Evolution API (self-hosted gateway) — wraps Baileys, exposes REST/webhooks
+- **Telegram**: python-telegram-bot — mature, well-documented
+- **Signal**: signal-cli + Python wrapper
+
+This gives us full control over the code, unified Python codebase, and no framework dependencies.
 
 ---
 
-## Open Questions
+## Open Questions (Resolved)
 
-- Is OpenClaw's single-gateway model acceptable for v0, or does even a prototype need federation?
-- How much of the clustering logic can be a skill (markdown instructions to an LLM) vs. needing custom code?
-- OpenClaw skills are instructions to the model, not executable code — is that sufficient for civic action templates, or do we need deterministic execution?
-- The memory system uses markdown files — is that durable and structured enough for an evidence store, or do we need a proper append-only log?
-- OpenClaw's security model is designed for personal use (one person's agents). How much needs to change for a multi-user civic system where participants don't trust each other?
-- What's the licensing situation? OpenClaw is MIT-licensed — does that align with Collective Will's goals for the commons?
+These questions led to the decision to use direct integrations:
+
+| Question | Resolution |
+|----------|------------|
+| Is OpenClaw's single-gateway model acceptable? | Moot — we're not using OpenClaw |
+| OpenClaw's security model for personal use? | Key concern — civic platform needs multi-user trust model |
+| Skill markdown vs executable code? | We need deterministic Python code for clustering/canonicalization |
+| Memory system vs evidence store? | Need proper append-only log with hash chain — built custom |
+
+## Patterns We Borrowed
+
+Even though we didn't adopt OpenClaw, we borrowed good ideas:
+
+1. **Isolated agent concept**: Different pipeline stages have different responsibilities and constraints
+2. **Skills as markdown**: Civic action templates can be markdown files (but executed by Python, not LLM)
+3. **Hooks for audit**: Event-driven logging pattern for evidence store
+4. **Channel normalization**: Unified message format across WhatsApp/Telegram/Signal

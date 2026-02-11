@@ -50,8 +50,8 @@ A practical guide for setting up and managing the infrastructure for Collective 
 │  │                      Docker Compose                         │ │
 │  │                                                             │ │
 │  │  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────────┐   │ │
-│  │  │  nginx  │  │   web   │  │ gateway │  │   pipeline  │   │ │
-│  │  │ :80/443 │─▶│ :3000   │  │  :8080  │  │   (cron)    │   │ │
+│  │  │  nginx  │  │   web   │  │ backend │  │  scheduler  │   │ │
+│  │  │ :80/443 │─▶│ :3000   │  │  :8000  │  │   (cron)    │   │ │
 │  │  └─────────┘  └─────────┘  └─────────┘  └─────────────┘   │ │
 │  │       │                          │              │          │ │
 │  │       │            ┌─────────────┴──────────────┘          │ │
@@ -369,38 +369,54 @@ services:
       - ./certs:/etc/letsencrypt:ro
     depends_on:
       - web
+      - backend
     restart: unless-stopped
 
   # Next.js website
   web:
-    build: ./apps/web
+    build: ./web
     environment:
-      - DATABASE_URL=postgres://collective:${DB_PASSWORD}@postgres:5432/collective_will
+      - NEXT_PUBLIC_API_URL=http://backend:8000
       - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
       - NEXTAUTH_URL=https://yourdomain.com
     depends_on:
-      - postgres
+      - backend
     restart: unless-stopped
 
-  # Messaging gateway (OpenClaw)
-  gateway:
-    build: ./apps/gateway
+  # Python backend (FastAPI)
+  backend:
+    build: .
+    command: uvicorn src.api.main:app --host 0.0.0.0 --port 8000
     environment:
       - DATABASE_URL=postgres://collective:${DB_PASSWORD}@postgres:5432/collective_will
-      - WHATSAPP_TOKEN=${WHATSAPP_TOKEN}
       - TELEGRAM_TOKEN=${TELEGRAM_TOKEN}
+      - EVOLUTION_API_URL=http://evolution:8080
+      - EVOLUTION_API_KEY=${EVOLUTION_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
     depends_on:
       - postgres
+      - evolution
     restart: unless-stopped
 
-  # Python AI pipeline
-  pipeline:
-    build: ./apps/pipeline
+  # Background job scheduler
+  scheduler:
+    build: .
+    command: python -m src.scheduler
     environment:
       - DATABASE_URL=postgres://collective:${DB_PASSWORD}@postgres:5432/collective_will
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
     depends_on:
       - postgres
+    restart: unless-stopped
+
+  # Evolution API (WhatsApp gateway)
+  evolution:
+    image: atendai/evolution-api:latest
+    environment:
+      - AUTHENTICATION_API_KEY=${EVOLUTION_API_KEY}
+      - DATABASE_ENABLED=false
+    volumes:
+      - ./data/evolution:/evolution/instances
     restart: unless-stopped
 
   # PostgreSQL database
@@ -435,8 +451,8 @@ DB_PASSWORD=your_very_strong_password_here_min_32_chars
 NEXTAUTH_SECRET=another_random_string_min_32_chars
 
 # Messaging APIs
-WHATSAPP_TOKEN=your_whatsapp_business_api_token
 TELEGRAM_TOKEN=your_telegram_bot_token
+EVOLUTION_API_KEY=your_evolution_api_key_here
 
 # LLM API
 ANTHROPIC_API_KEY=sk-ant-your-key-here
@@ -497,9 +513,19 @@ http {
             proxy_cache_bypass $http_upgrade;
         }
 
+        # API endpoints (Python backend)
+        location /api/ {
+            proxy_pass http://backend:8000;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+
         # Webhook endpoints for messaging platforms
         location /webhook/ {
-            proxy_pass http://gateway:8080;
+            proxy_pass http://backend:8000;
             proxy_http_version 1.1;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;

@@ -77,7 +77,7 @@ How the system works, how trust is built, and how it could be implemented.
 - **[Architecture](docs/architecture.md)** — the full pipeline from submission to action, the evidence store, a worked example following a user through the entire lifecycle, and open questions about storage, scaling, and processing models.
 - **[Governance and Trust](docs/governance-and-trust.md)** — the trust model, separation of power between roles, the threat model, decentralization approach, and open questions about identity, voting mechanisms, and protocol governance.
 - **[Visibility and Trust](docs/visibility-and-trust.md)** — how to actually build verifiable trust: transparency logs, signed agent receipts, verifiable AI, sybil-resistant identity, end-to-end verifiable voting, and why most of this doesn't require blockchain.
-- **[OpenClaw as Infrastructure](docs/openclaw-as-infrastructure.md)** — how OpenClaw's multi-agent architecture, channel integrations, skills system, and memory model could serve as the foundation for a v0, what we'd get for free, and what we'd still need to build.
+- **[Channel Integration Research](docs/openclaw-as-infrastructure.md)** — research on messaging frameworks (OpenClaw, Automagik Omni, direct libraries), why we chose direct channel integrations in Python, and what patterns we borrowed.
 - **[LLM Strategy & Model Selection](docs/llm-strategy.md)** — latest open-source models (Feb 2026), hybrid local/cloud architecture for low-cost MVP, and action plan (Qwen3-8B, MiMo-V2-Flash, DeepSeek V3.2/V4).
 
 ---
