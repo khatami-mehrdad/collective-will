@@ -215,15 +215,19 @@ messaging-gateway/
 **Output**: Structured `PolicyCandidate`
 
 **Technology**: 
-- **Model**: Qwen3-8B (local) — sufficient for structured extraction
-- **Fallback**: DeepSeek V3.2 API for ambiguous cases
+- **Model**: Anthropic Claude or Mistral API (cloud)
+- **Data separation**: Only anonymous text sent to API; user IDs and metadata never leave local infrastructure
 
 **Processing Steps**:
-1. Detect language (Farsi, English, Kurdish, etc.)
-2. Extract policy concern(s) — may yield multiple candidates from one message
-3. Structure into `PolicyCandidate` schema
-4. Compute semantic embedding for clustering
-5. Store in database with link to original
+1. Store raw submission locally with user link (never sent to cloud)
+2. Extract text only, strip all metadata
+3. Batch submissions, shuffle order (breaks timing correlation)
+4. Send anonymous text to cloud LLM for canonicalization
+5. Detect language (Farsi, English, Kurdish, etc.)
+6. Extract policy concern(s) — may yield multiple candidates from one message
+7. Structure into `PolicyCandidate` schema
+8. Compute semantic embedding locally (CPU)
+9. Store structured result, link back to original submission
 
 **Prompt Strategy**:
 ```
@@ -243,6 +247,8 @@ Output JSON schema: {PolicyCandidate}
 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
+| LLM location | Cloud (Anthropic/Mistral) | Simpler infrastructure for MVP; revisit at scale |
+| Data separation | Text-only to cloud, user links stay local | Protects user identity while enabling AI processing |
 | Multi-issue handling | Split into separate candidates | Research shows joint prediction works; preserves granularity |
 | Language | Process in original language, translate for display | Preserves nuance; translation happens at display time |
 | Confidence threshold | <0.7 confidence → flag for review | Better to surface uncertainty than silently fail |
@@ -254,9 +260,9 @@ Output JSON schema: {PolicyCandidate}
 **Output**: `Cluster` records with summaries
 
 **Technology**:
-- **Embeddings**: `multilingual-e5-large` (local) — validated for political text across languages
-- **Clustering**: HDBSCAN (density-based, no need to specify K)
-- **Summarization**: Qwen3-8B (local)
+- **Embeddings**: `multilingual-e5-large` (local, CPU) — stays local for privacy; CPU sufficient for batch processing at MVP scale
+- **Clustering**: HDBSCAN (density-based, no need to specify K) — runs locally
+- **Summarization**: Anthropic Claude or Mistral API (cloud) — receives only aggregated/anonymized cluster content, not individual submissions
 
 **Processing Steps**:
 1. Load all candidates from current cycle (or delta since last run)
@@ -856,9 +862,10 @@ User visits /dashboard
 | **Database** | PostgreSQL + pgvector | Mature, embeddings, JSONB |
 | **Website** | Next.js (TypeScript) | SSR, React, good i18n |
 | **Hosting** | Single VPS (Hetzner/DigitalOcean) | Simple, cheap, EU-based for GDPR |
-| **Local LLM** | Qwen3-8B via vLLM or Ollama | Cost efficiency, privacy |
-| **Cloud LLM** | DeepSeek V3.2 API | 5-25× cheaper than GPT-4 |
-| **Embeddings** | multilingual-e5-large (local) | Validated for political text |
+| **Cloud LLM** | Anthropic Claude or Mistral API | EU/US providers with strong privacy posture |
+| **Embeddings** | multilingual-e5-large (local, CPU) | Stays local for privacy; CPU sufficient at MVP scale |
+
+**LLM Strategy**: Cloud-first for MVP. Local GPU infrastructure deferred until critical mass justifies the complexity. See [Section 7.3](#73-why-cloud-first-for-mvp) for rationale and data separation approach.
 
 ### 6.2 Language Choices
 
@@ -1039,12 +1046,7 @@ services:
     build: ./apps/pipeline
     environment:
       - DATABASE_URL=postgres://...
-      - DEEPSEEK_API_KEY=...
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - capabilities: [gpu]  # For local LLM
+      - ANTHROPIC_API_KEY=...      # Or MISTRAL_API_KEY
     
   web:
     build: ./apps/web
@@ -1061,14 +1063,16 @@ services:
       - ./certs:/etc/letsencrypt
 ```
 
-**Server requirements**:
+**Server requirements** (cloud LLM approach):
 - 4 CPU cores
-- 32GB RAM (for local LLM)
-- 24GB GPU (RTX 4090) OR 8GB GPU + cloud fallback
-- 200GB SSD
+- 16GB RAM (for embeddings model + application)
+- No GPU required — embeddings run on CPU, LLM calls go to cloud
+- 100GB SSD
 - Location: EU (Netherlands or Germany for GDPR + Iran diaspora proximity)
 
-**Cost estimate**: ~$150-200/month (Hetzner dedicated with GPU) or ~$50/month (VPS + cloud LLM only)
+**Cost estimate**: ~$50/month (Hetzner VPS or DigitalOcean) + ~$5-15/month LLM API costs
+
+**Future scaling**: When volume justifies local LLM infrastructure (~10K+ submissions/month), upgrade to GPU server (~$150-200/month) and switch to local models.
 
 ---
 
@@ -1111,16 +1115,64 @@ This is why we have an evidence store, why clustering shows "why these were grou
 | **Pinecone** | Vector search | pgvector sufficient; one less service |
 | **Redis** | Caching | Premature optimization |
 
-### 7.3 Why Local LLM First
+### 7.3 Why Cloud-First for MVP
 
-| Approach | Monthly Cost (1K submissions) | Latency | Privacy |
-|----------|-------------------------------|---------|---------|
-| **All cloud (GPT-4)** | ~$35 | Fast | Data leaves infra |
-| **All cloud (DeepSeek)** | ~$2 | Fast | Data leaves infra |
-| **Local + cloud fallback** | ~$0.50 | Medium | Stays local mostly |
-| **All local** | ~$0 | Slow | Full control |
+| Approach | Infra Cost | LLM Cost (1K submissions) | Complexity |
+|----------|------------|---------------------------|------------|
+| **GPU server + local LLM** | ~$150-200/mo | ~$0.50 | High (GPU procurement, vLLM setup, model management) |
+| **VPS + cloud LLM** | ~$50/mo | ~$5-15 | Low (standard VPS, API calls) |
 
-**Decision**: Local (Qwen3-8B) for canonicalization/clustering, DeepSeek for complex cases. Privacy-preserving and cost-effective.
+**Decision**: Cloud-first for MVP. At 500 users / ~200 submissions, API costs are negligible (~$5-15/month). GPU infrastructure complexity is not justified until we reach critical mass.
+
+**When to revisit**: Consider local LLM infrastructure when:
+- Submission volume exceeds ~10K/month (cost crossover)
+- Privacy requirements escalate (e.g., government partnership)
+- Latency becomes critical (real-time processing needed)
+
+#### Data Separation Strategy
+
+The key concern with cloud LLMs is privacy for users inside Iran whose political views could be dangerous if exposed.
+
+**What stays local (never sent to cloud):**
+- User identifiers and account information
+- Submission-to-user mapping
+- Timing metadata that could correlate submissions
+- Raw embeddings (computed locally on CPU)
+
+**What goes to cloud LLM (anonymized):**
+- Submission text only (stripped of all context)
+- Batched and shuffled to break timing correlation
+- Cluster summaries (aggregated content, not individual voices)
+
+**Provider selection criteria:**
+| Provider | Jurisdiction | Data Handling | Recommendation |
+|----------|-------------|---------------|----------------|
+| **Anthropic Claude** | US | No training on API data, SOC2 | ✅ Good for MVP |
+| **Mistral** | France/EU | EU data residency, GDPR compliant | ✅ Good for MVP |
+| **DeepSeek** | China | Unclear data handling | ❌ Avoid for sensitive content |
+| **OpenAI** | US | Enterprise tier has strong privacy | ⚠️ Acceptable |
+
+**Implementation pattern:**
+
+```
+User submission → Store locally with user_id
+                         ↓
+              Strip metadata, extract text only
+                         ↓
+              Batch submissions (every 6 hours)
+                         ↓
+              Shuffle batch order
+                         ↓
+              Send anonymous text[] to cloud LLM
+                         ↓
+              Receive structured PolicyCandidate[]
+                         ↓
+              Match results back to local submissions
+                         ↓
+              Store with audit trail
+```
+
+**Threat model acknowledgment**: Even anonymized political text in bulk could theoretically be valuable to adversaries, but it represents aggregate opinions without individual identification. The user-to-submission link is the critical secret, and that never leaves local infrastructure.
 
 ### 7.4 Why Approval Voting
 
@@ -1170,7 +1222,7 @@ Per research: Iranian SIAM system uses phone numbers for surveillance. Platform 
 | Telegram intake | Secondary |
 | Email verification | Magic links |
 | Messaging account verification | Account age check |
-| Canonicalization (LLM) | Local Qwen3-8B |
+| Canonicalization (LLM) | Cloud API (Anthropic/Mistral) with data separation |
 | Clustering (HDBSCAN) | Batch every 6 hours |
 | Approval voting | Via messaging app |
 | Public analytics dashboard | Anyone can view |
@@ -1286,8 +1338,8 @@ GET  /api/evidence/chain              # Public: verify hash chain integrity
 - [ ] "Hello world" message round-trip
 
 ### Milestone 2: Pipeline (Week 3-4)
-- [ ] Canonicalization agent (Qwen3-8B)
-- [ ] Embedding computation
+- [ ] Canonicalization agent (cloud API with data separation)
+- [ ] Embedding computation (local, CPU)
 - [ ] HDBSCAN clustering
 - [ ] Batch scheduler
 
