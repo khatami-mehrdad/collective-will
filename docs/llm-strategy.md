@@ -8,11 +8,13 @@ This doc summarizes the current model landscape (February 2026), the hybrid arch
 
 ## The Short Version
 
-- **Goal:** Minimize token cost for the MVP by routing easy work to local small LLMs and hard work to cloud or capable local models.
-- **Architecture:** A single LLM abstraction with a router. Each agent declares task difficulty; the router picks local or cloud. No vendor lock-in.
-- **Local tier:** Latest small open-source models (Qwen3-8B, MiMo-V2-Flash, etc.) handle canonicalization, clustering summaries, and simple drafts. Run on a single consumer GPU (8–24GB VRAM).
-- **Cloud tier:** DeepSeek V3.2 (and V4 when it ships) or Kimi K2.5 for action planning and complex drafting. DeepSeek API is ~5–15× cheaper than GPT-4.
-- **Action plan:** Design the abstraction now; start with Qwen3-8B + DeepSeek API; upgrade to MiMo-V2-Flash and DeepSeek V4 as they stabilize.
+- **Goal:** Minimize cost while handling Farsi well. Use the right model for each task.
+- **Architecture:** A single LLM abstraction with task-based routing. No vendor lock-in.
+- **Language strategy:** Farsi is the primary user language; English is the internal processing language. Models are chosen based on Farsi support needs.
+- **Farsi-touching tasks:** Claude Haiku — excellent Farsi comprehension, handles translation + understanding in one step.
+- **English-only reasoning:** DeepSeek V3.2 — cheap, high quality for English, poor Farsi (avoid for user-facing).
+- **Local tier:** Embeddings (BGE-small) + Qwen3-8B for clustering summaries. Run on CPU/low VRAM.
+- **Action plan:** Start with Claude Haiku + DeepSeek V3.2; add local models as volume grows.
 
 ---
 
@@ -20,13 +22,14 @@ This doc summarizes the current model landscape (February 2026), the hybrid arch
 
 The pipeline has three AI-dependent stages:
 
-| Agent | Task | Complexity | Target tier |
-|-------|------|------------|-------------|
-| **Canonicalization** | Freeform text → structured policy candidates | Medium | Local |
-| **Clustering** | Group similar items, produce summaries | Easy–Medium | Local (embeddings + small LLM) |
-| **Action planning** | Map voted items to action templates, draft content | Hard | Cloud or capable local |
+| Agent | Task | Language | Model | Why |
+|-------|------|----------|-------|-----|
+| **Canonicalization** | Freeform Farsi → structured English | Farsi in | Claude Haiku | Excellent Farsi, translation + understanding in one step |
+| **Clustering** | Group similar items, produce summaries | English | Local (BGE embeddings + Qwen3-8B) | High volume, English-only, cost-sensitive |
+| **Action planning** | Map voted items to action templates, draft content | English | DeepSeek V3.2 | Complex reasoning, English-only, cheap |
+| **User messages** | Bot responses, confirmations, vote prompts | Farsi out | Claude Haiku | User-facing Farsi quality matters |
 
-Research shows ~80% of real-world queries can be handled by local models (≤20B parameters), with large cost and energy savings. We design for that split from day one.
+**Key insight:** DeepSeek is ~10x cheaper than Claude but has poor Farsi/RTL support (issues closed as "not planned"). We use Claude only where Farsi quality matters, DeepSeek for English-heavy reasoning.
 
 ---
 
@@ -88,29 +91,27 @@ Newer models bring algorithm and data advantages at the same size: better reason
 ```
 ┌─────────────────────────────────────────────────────────┐
 │                  LLM abstraction + router               │
-│         (RouteLLM, or custom difficulty-based)          │
-└──────────────┬──────────────────────────┬────────────────┘
-               │                          │
-        ┌──────▼──────┐            ┌──────▼──────┐
-        │ LOCAL TIER  │            │ CLOUD TIER  │
-        │             │            │             │
-        │ • Canonical.│            │ • Action    │
-        │ • Clustering│            │   planning  │
-        │ • Simple    │            │ • Complex   │
-        │   drafts    │            │   drafting  │
-        │             │            │             │
-        │ Models:     │            │ Models:     │
-        │ Qwen3-8B    │            │ DeepSeek    │
-        │ MiMo-V2-    │            │ V3.2 / V4   │
-        │ Flash       │            │ Kimi K2.5   │
-        │ (6–12GB     │            │ (fallback)  │
-        │  VRAM)      │            │             │
-        └─────────────┘            └─────────────┘
+│            (task-based: by agent / language)            │
+└─────┬─────────────────┬─────────────────┬───────────────┘
+      │                 │                 │
+┌─────▼─────┐    ┌──────▼──────┐   ┌──────▼──────┐
+│  FARSI    │    │   LOCAL     │   │  ENGLISH    │
+│  TIER     │    │   TIER      │   │  REASONING  │
+│           │    │             │   │             │
+│ • Canon.  │    │ • Embeddings│   │ • Action    │
+│ • User    │    │ • Cluster   │   │   planning  │
+│   messages│    │   summaries │   │ • Complex   │
+│           │    │             │   │   drafts    │
+│ Model:    │    │ Models:     │   │             │
+│ Claude    │    │ BGE-small   │   │ Model:      │
+│ Haiku     │    │ Qwen3-8B    │   │ DeepSeek    │
+│           │    │ (CPU/6GB)   │   │ V3.2        │
+└───────────┘    └─────────────┘   └─────────────┘
 ```
 
-- **Router:** Chooses local vs cloud per request (e.g. by agent, by estimated difficulty, or via a trained router like RouteLLM).
-- **Embeddings:** Local embedding model (e.g. BGE-small) for clustering similarity; no GPU required.
-- **Abstraction:** All agents call the same interface (e.g. `complete(prompt, options)`); implementation swaps backend.
+- **Router:** Task-based routing by agent name. Farsi-in or Farsi-out → Claude. English reasoning → DeepSeek. Embeddings/summaries → Local.
+- **Embeddings:** BGE-small-en-v1.5 for clustering similarity; runs on CPU.
+- **Abstraction:** All agents call the same interface (e.g. `complete(prompt, model_tier)`); implementation swaps backend.
 
 ---
 
@@ -124,10 +125,11 @@ Newer models bring algorithm and data advantages at the same size: better reason
 
 ### Phase 2 — MVP (first deploy)
 
-- **Local:** Qwen3-8B (or Qwen3-14B if hardware allows). Handles canonicalization and clustering-side summarization.
-- **Embeddings:** Small local model (e.g. BGE-small-en-v1.5) for clustering.
-- **Cloud:** DeepSeek V3.2 API for action planning and complex drafts.
-- **Target hardware:** Single GPU with 8–12GB VRAM (e.g. RTX 3060/4060) or 24GB (e.g. RTX 4090) for larger local model.
+- **Farsi tier:** Claude Haiku for canonicalization (Farsi → structured English) and user-facing messages (Farsi responses).
+- **Embeddings:** BGE-small-en-v1.5 for clustering similarity; runs on CPU.
+- **Local summaries:** Qwen3-8B for cluster summaries (English-only, optional — can use DeepSeek if no GPU).
+- **English reasoning:** DeepSeek V3.2 API for action planning and complex drafts.
+- **Target hardware:** CPU-only is fine for MVP. Add GPU later for local Qwen3 if cost matters at scale.
 
 ### Phase 3 — After DeepSeek V4 (Feb 2026+)
 
@@ -143,7 +145,18 @@ Newer models bring algorithm and data advantages at the same size: better reason
 
 ### Cost ballpark (MVP)
 
-- **Small community** (e.g. 1k submissions/month): mostly local inference + limited DeepSeek API → on the order of **$5–15/month** vs **$50–200+** if everything used a premium cloud API.
+**1k submissions/month estimate:**
+
+| Task | Model | Volume | Cost |
+|------|-------|--------|------|
+| Canonicalization | Claude Haiku | 1k submissions | ~$2 |
+| Clustering embeddings | BGE-small (local) | 1k items | $0 |
+| Cluster summaries | Qwen3-8B (local) or DeepSeek | 50 clusters | ~$0.50 |
+| Action planning | DeepSeek V3.2 | 10 actions | ~$0.50 |
+| User messages | Claude Haiku | 3k messages | ~$3 |
+| **Total** | | | **~$6/month** |
+
+Compare: ~$50–100/month if using Claude for everything, or ~$150+ if using GPT-4.
 
 ---
 
