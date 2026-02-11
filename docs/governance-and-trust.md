@@ -22,7 +22,7 @@ The system defines three roles, deliberately separated:
 
 **Nodes** — Infrastructure operators. They run AI agents, provide compute, serve the platform. They have no influence over what gets prioritized, how it's worded, or what actions are taken.
 
-**Architects** — Protocol designers. They define the rules, maintain the system, and evolve the design. They do not participate in agenda-setting, voting, or execution. Their power is structural, not operational.
+**Architects** — Protocol designers. They define the rules, maintain the system, and evolve the design. They do not participate in agenda-setting, voting, or execution. Their power is structural, not operational. Architects operate under pseudonyms — no real identities are publicly associated with this role. See [operational-security.md](operational-security.md).
 
 This separation exists to prevent capture. No single role can control both the rules and the outcomes.
 

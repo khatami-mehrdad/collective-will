@@ -434,7 +434,14 @@ Beyond legal compliance, must consider:
 | Unlimited lobbying | Donations not tax-deductible |
 | Can engage in political activity | US jurisdiction/discovery |
 | Established advocacy framework | FARA scrutiny potential |
-| GL D-2 clearly applies | |
+| GL D-2 clearly applies | **Creates public records with officer names** |
+
+> **⚠️ OpSec Warning**: Forming a 501(c)(4) requires filing Form 8976 with the IRS, which includes names of directors/officers. While not all information is public, the organization's existence and registered agent become discoverable. **If contributors need anonymity (e.g., family in Iran), do NOT form a legal entity with their names.** Instead:
+> 1. Partner with an established NGO as fiscal sponsor
+> 2. Use nominee directors (legal but costs more)
+> 3. Operate without legal entity for MVP
+> 
+> See [operational-security.md](operational-security.md) for details.
 
 **Option B: Netherlands Foundation (Stichting)**
 

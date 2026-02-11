@@ -98,6 +98,18 @@ Research conducted to inform MVP definition. All documents have detailed finding
 
 ---
 
+## Contributor Safety
+
+**This project targets Iran.** Contributors may have family in sensitive countries. To protect everyone:
+
+- **Use pseudonymous identities** for all public-facing work (git commits, GitHub account, communications)
+- **Never use your real name** in commits, code comments, or public discussions
+- **Read the [Operational Security Guide](docs/operational-security.md)** before contributing
+
+If you're setting up infrastructure, the **[Infrastructure Guide](docs/infrastructure-guide.md)** includes anonymous hosting options.
+
+---
+
 ## Contributing
 
 Read **[CONTRIBUTING.md](CONTRIBUTING.md)**.

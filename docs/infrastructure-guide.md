@@ -2,6 +2,8 @@
 
 A practical guide for setting up and managing the infrastructure for Collective Will. Written for beginners.
 
+> **⚠️ Safety First**: If you or any contributors have family in Iran or other sensitive countries, read the [Operational Security Guide](operational-security.md) BEFORE setting up infrastructure. Your standard credit card and identity should NOT be attached to this project.
+
 ---
 
 ## Table of Contents
@@ -90,7 +92,26 @@ Consider scaling when you hit these limits. Until then, keep it simple.
 
 ## 2. Hosting Provider Setup
 
-### Recommended: Hetzner Cloud
+### Choosing a Provider
+
+**Use privacy-focused providers (Njalla or 1984.is)**
+
+The key protection is that **WHOIS shows the registrar, not you**. This requires using a privacy-focused provider. Credit card payment is fine.
+
+| Provider | WHOIS Shows | Jurisdiction | Credit Card OK? |
+|----------|-------------|--------------|-----------------|
+| **Njalla** | "Njalla, Sweden" | Sweden | ✅ Yes |
+| **1984.is** | Privacy-protected | Iceland | ✅ Yes |
+| Hetzner | Your identity | Germany | ❌ Don't use |
+| Regular registrar | Your name/address | Varies | ❌ Don't use |
+
+**Why NOT Hetzner/DigitalOcean**: They verify your identity and that information is more easily discoverable. The privacy protection comes from the provider's model, not from payment method.
+
+See [Operational Security Guide](operational-security.md) for the full risk framework.
+
+---
+
+### Option A: Hetzner Cloud (Standard)
 
 **Why Hetzner:**
 - EU-based (Germany) — strong privacy laws
@@ -106,16 +127,64 @@ Consider scaling when you hit these limits. Until then, keep it simple.
 | **CX32** | 4 | 8 GB | 80 GB | €8.50 | **MVP production** |
 | CX42 | 8 | 16 GB | 160 GB | €17 | If needed later |
 
-### Step-by-Step: Create Hetzner VPS
+### Option B: Njalla VPS (Recommended for This Project)
+
+**Why Njalla:**
+- Swedish company, strong privacy laws
+- WHOIS shows "Njalla, Sweden" — not your name (key protection)
+- No identity verification required
+- Same company for domain + hosting = simpler setup
+- **Credit card payment is fine** — crypto optional
+
+| Plan | vCPU | RAM | Storage | Monthly |
+|------|------|-----|---------|---------|
+| 1GB | 1 | 1 GB | 15 GB | €15 |
+| **4GB** | 2 | 4 GB | 80 GB | €30 |
+| 8GB | 4 | 8 GB | 160 GB | €60 |
+
+More expensive than Hetzner, but provides the privacy protection needed for this project.
+
+**Alternative**: 1984.is (Iceland) - similar privacy focus, Icelandic jurisdiction.
+
+---
+
+### Step-by-Step: Create Njalla VPS (Recommended)
+
+**Why Njalla**: WHOIS shows "Njalla, Sweden" not your name. This is the key protection. Credit card payment is fine — the privacy comes from their registration model, not the payment method.
+
+1. **Create Njalla account**: https://njal.la
+   - Use pseudonymous email (ProtonMail recommended)
+   - No identity verification required
+
+2. **Register domain** (if needed):
+   - Njalla owns the domain on your behalf
+   - WHOIS shows Njalla, not you
+   - ~$15/year for .com
+
+3. **Create VPS**:
+   - Select VPS plan (4GB recommended for MVP: €30/mo)
+   - Payment: **Credit card is fine** (crypto optional for extra layer)
+
+4. **Access your VPS**:
+   - Njalla provides SSH access details
+   - Connect: `ssh root@your-server-ip`
+
+**Alternative**: 1984.is (Iceland) — similar privacy focus, same approach.
+
+---
+
+### Step-by-Step: Create Hetzner VPS (Standard - Only If No OpSec Concerns)
+
+> **⚠️ Warning**: Hetzner requires real identity verification. Only use this path if you're certain no contributors have family in sensitive countries. For this project, Njalla is recommended.
 
 1. **Create account**: https://accounts.hetzner.com/signUp
-   - Use your real info (they verify identity for fraud prevention)
+   - ⚠️ Requires real identity for fraud prevention
 
 2. **Add payment method**: Credit card or PayPal
 
 3. **Create project**: 
    - Go to Cloud Console: https://console.hetzner.cloud
-   - Click "New project" → Name it "collective-will"
+   - Click "New project" → Name it with a neutral name (not "collective-will")
 
 4. **Create SSH key** (on your laptop):
    ```bash

@@ -142,8 +142,8 @@ The spectrum:
 | Verifiable Credentials (W3C) | Configurable | High (selective disclosure) | Medium | Trust issuer(s) |
 
 For Collective Will, the most promising path may be **tiered identity**:
-- **Submit concerns:** low barrier (email or phone)
-- **Vote:** higher bar (verifiable credential from any accepted issuer)
+- **Submit concerns:** low barrier (email only — no phone for Iran pilot due to SIAM surveillance)
+- **Vote:** higher bar (verifiable credential from any accepted issuer, or social account age)
 - **Trigger action on behalf of others:** highest bar (strong identity + community standing)
 
 This matches the principle that the cost of verification should scale with the power being exercised.
@@ -239,8 +239,8 @@ Critical pipeline stages (clustering, canonicalization) run through multiple ind
 
 ### Layer 4: Tiered Identity
 Identity requirements scale with the power being exercised:
-- Submit: low friction (email/phone)
-- Vote: verifiable credential (W3C VC from accepted issuer)
+- Submit: low friction (email only — no phone for Iran pilot)
+- Vote: verifiable credential (W3C VC from accepted issuer) or social account age
 - Execute: strong identity + community standing
 
 ### Layer 5: Verifiable Voting

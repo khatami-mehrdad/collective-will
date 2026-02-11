@@ -201,6 +201,22 @@ messaging-gateway/
 | Message format | Plain text, Farsi primary | Lowest friction; LLM handles translation |
 | Session management | Stateless per-message | Simpler; state lives in database |
 
+**WhatsApp Business API: Medium Risk (Acceptable)**
+
+WhatsApp Business API requires Meta business verification, but this is **not a high-risk exposure**:
+- Meta verification is NOT public record (unlike domain WHOIS)
+- Iranian government cannot subpoena Meta (no jurisdiction)
+- You're one of millions of Business API users
+- No public link between your identity and the project
+
+This is the same risk level as using Anthropic's API — acceptable for MVP.
+
+**Setup options:**
+1. **Direct registration** with Meta Business (credit card OK)
+2. **Via BSP** like Twilio or MessageBird (one step removed)
+
+See [operational-security.md](operational-security.md) for the full risk-tier framework.
+
 ---
 
 ### 3.2 Processing Pipeline
@@ -1109,6 +1125,36 @@ Every feature in v0 is filtered through one question: **"Can a user verify this?
 This is why we have an evidence store, why clustering shows "why these were grouped," why users can flag bad canonicalization, and why the audit explorer exists.
 
 **If we can't make it visible, we don't build it.**
+
+---
+
+### 7.0.1 Contributor Safety and Anonymity
+
+**The problem**: Contributors may have family in Iran. If identity is linked to this project, families could face pressure.
+
+**The principle**: The key is **publicly discoverable** vs **requires subpoena**. Use privacy-focused providers; credit card is fine.
+
+| Vector | Risk | Approach |
+|--------|------|----------|
+| Regular domain registrar | **High** | Your name in WHOIS — DON'T USE |
+| Regular hosting (Hetzner) | **High** | Identity verified — DON'T USE |
+| Git commits with real name | **High** | Permanent in history — USE PSEUDONYM |
+| GitHub with real identity | **High** | Public profile — USE PSEUDONYM |
+| Njalla domain | Medium | WHOIS shows Njalla — credit card OK |
+| Njalla/1984.is hosting | Medium | Privacy jurisdiction — credit card OK |
+| WhatsApp Business API | Medium | Not public — credit card OK |
+| LLM API accounts | Medium | Not public — credit card OK |
+
+**Key insight**: The protection comes from **using privacy-focused registrar/host** (Njalla, 1984.is), not from paying with crypto. Credit card is acceptable.
+
+**MVP requirements**:
+- Domain + hosting via Njalla or 1984.is (credit card OK)
+- Pseudonymous identity for code (git, GitHub, public comms)
+- Regular accounts OK for WhatsApp, LLM APIs, dev tools
+
+See **[Operational Security Guide](operational-security.md)** for implementation details.
+
+**Long-term goal**: Decentralize so project can run without any single identity exposure point.
 
 ---
 

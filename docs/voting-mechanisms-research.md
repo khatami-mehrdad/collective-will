@@ -387,7 +387,7 @@ This adds manipulation resistance without complicating the voting UX.
 
 ### What Must Be Right from the Start
 
-1. **Identity layer:** Basic Sybil resistance (one person, one vote) is prerequisite. Can start simple (email verification, phone) but must exist.
+1. **Identity layer:** Basic Sybil resistance (one person, one vote) is prerequisite. Can start simple (email verification) but must exist. Note: Phone verification is NOT safe for Iran pilot — see research-identity-sybil-resistance.md.
 
 2. **Audit trail:** All votes must be logged with timestamps for later analysis. Can't retrofit transparency.
 
@@ -442,7 +442,7 @@ This adds manipulation resistance without complicating the voting UX.
 
 **Phase 1 (MVP):**
 - Approval voting UI
-- Basic identity (email/phone verification)
+- Basic identity (email verification only — no phone for Iran pilot)
 - Simple majority threshold for action
 - Audit log of all votes
 

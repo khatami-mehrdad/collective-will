@@ -30,7 +30,8 @@ This document summarizes all research conducted to inform MVP definition for Col
 **Do:**
 - Target diaspora for action execution (safety)
 - Allow inside-Iran users to submit and vote only
-- Distribute through Telegram/VPN channels
+- Use WhatsApp as primary channel (no VPN required in Iran since Dec 2024)
+- Support Telegram for diaspora and VPN users
 - Support Farsi + Azerbaijani Turkish + Kurdish
 - Partner with trusted diaspora media (Iran International, BBC Persian)
 
@@ -200,6 +201,7 @@ No GPU required for MVP. See [Infrastructure Guide](infrastructure-guide.md) for
 |----------|---------|
 | [mvp-specification.md](mvp-specification.md) | Complete MVP specification and architecture |
 | [infrastructure-guide.md](infrastructure-guide.md) | Step-by-step server setup and operations guide |
+| [operational-security.md](operational-security.md) | Contributor anonymity and safety (SENSITIVE) |
 
 ### Research Documents
 
