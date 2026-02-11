@@ -49,9 +49,13 @@ Three things changed:
 
 ## Current Status
 
-This is a **design-phase project**. No production code. The goal right now is to explore feasibility, identify risks, and pressure-test the governance model before writing implementation.
+This is a **design-phase project** transitioning to implementation. The MVP specification is complete.
 
-Every document has open questions at the bottom. Those questions are the real work.
+**Pilot focus**: Iran — surfacing what Iranians collectively want.
+
+**v0 goal**: Consensus visibility. Make collective preferences visible. Action execution is v1.
+
+See **[MVP Specification](docs/mvp-specification.md)** for the full technical design.
 
 ---
 
@@ -68,6 +72,7 @@ What exists, what we can learn from, and where this project fits in the landscap
 
 How the system works, how trust is built, and how it could be implemented.
 
+- **[MVP Specification](docs/mvp-specification.md)** — the complete v0 technical design: architecture, modules, data models, user flows, technology stack, and implementation milestones.
 - **[Agent Design](docs/agents.md)** — how the canonicalization, clustering, and action planning agents work, what their input/output contracts look like, and the hard unsolved problems around bias, quality evaluation, and schema design.
 - **[Architecture](docs/architecture.md)** — the full pipeline from submission to action, the evidence store, a worked example following a user through the entire lifecycle, and open questions about storage, scaling, and processing models.
 - **[Governance and Trust](docs/governance-and-trust.md)** — the trust model, separation of power between roles, the threat model, decentralization approach, and open questions about identity, voting mechanisms, and protocol governance.

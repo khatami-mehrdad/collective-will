@@ -1,0 +1,1202 @@
+# MVP Specification: Collective Will v0
+
+**Goal**: Surface what Iranians collectively want. Make consensus visible.
+
+**Non-goal for v0**: Action execution against policymakers (deferred to v1).
+
+---
+
+## Table of Contents
+
+1. [Product Overview](#1-product-overview)
+2. [System Architecture](#2-system-architecture)
+3. [Module Breakdown](#3-module-breakdown)
+4. [Data Models](#4-data-models)
+5. [User Flows](#5-user-flows)
+6. [Technology Stack](#6-technology-stack)
+7. [Design Decisions](#7-design-decisions)
+8. [What's In / Out of Scope](#8-whats-in--out-of-scope)
+9. [Open Questions](#9-open-questions)
+
+---
+
+## 1. Product Overview
+
+### Core Value Proposition
+
+Iranians don't know what other Iranians want. The regime controls public discourse, diaspora is fragmented, and no neutral platform surfaces collective preferences. Collective Will v0 answers: **"What do we, as a people, actually want?"**
+
+### User Story
+
+> As an Iranian (inside or diaspora), I want to express what I care about and see what others care about, so I can understand where consensus exists and feel connected to a collective voice.
+
+### Success Metrics (v0)
+
+| Metric | Target |
+|--------|--------|
+| Registered users | >500 in first 3 months |
+| Submissions | >200 unique policy concerns |
+| Voting participation | >30% of registered users vote |
+| Return visits (website) | >20% visit analytics weekly |
+| Trust indicator | >70% say clustering "fairly represents" their view |
+
+---
+
+## 2. System Architecture
+
+### High-Level Overview
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│                         PUBLIC WEBSITE                            │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐               │
+│  │  Landing    │  │  Analytics  │  │   User      │               │
+│  │  + Subscribe│  │  Dashboard  │  │  Dashboard  │               │
+│  └─────────────┘  └─────────────┘  └─────────────┘               │
+└──────────────────────────────────────────────────────────────────┘
+                              │
+                              │ reads from
+                              ▼
+┌──────────────────────────────────────────────────────────────────┐
+│                        CORE DATABASE                              │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐            │
+│  │  Users   │ │Submissions│ │ Clusters │ │  Votes   │            │
+│  └──────────┘ └──────────┘ └──────────┘ └──────────┘            │
+│                                                                   │
+│  ┌──────────────────────────────────────────────────┐            │
+│  │              Evidence Store (audit log)           │            │
+│  └──────────────────────────────────────────────────┘            │
+└──────────────────────────────────────────────────────────────────┘
+                              ▲
+                              │ writes to
+                              │
+┌──────────────────────────────────────────────────────────────────┐
+│                      PROCESSING PIPELINE                          │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐           │
+│  │Canonicalize  │─▶│   Cluster    │─▶│    Agenda    │           │
+│  │   Agent      │  │    Agent     │  │   Builder    │           │
+│  └──────────────┘  └──────────────┘  └──────────────┘           │
+└──────────────────────────────────────────────────────────────────┘
+                              ▲
+                              │ receives messages
+                              │
+┌──────────────────────────────────────────────────────────────────┐
+│                    MESSAGING GATEWAY                              │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │                    OpenClaw Gateway                       │   │
+│  │  ┌─────────┐  ┌─────────┐  ┌─────────┐                   │   │
+│  │  │WhatsApp │  │Telegram │  │ Signal  │                   │   │
+│  │  │ Channel │  │ Channel │  │ Channel │                   │   │
+│  │  └─────────┘  └─────────┘  └─────────┘                   │   │
+│  └──────────────────────────────────────────────────────────┘   │
+└──────────────────────────────────────────────────────────────────┘
+                              ▲
+                              │
+                           USERS
+                    (WhatsApp primary)
+```
+
+### Module Boundaries
+
+| Module | Responsibility | Talks To |
+|--------|---------------|----------|
+| **Messaging Gateway** | Receive/send messages, normalize across platforms | Pipeline, Database |
+| **Processing Pipeline** | Canonicalize, cluster, build agenda | Database |
+| **Core Database** | Store all data, provide queries | All modules |
+| **Public Website** | Display analytics, user dashboard | Database (read-only) |
+| **Evidence Store** | Append-only audit trail | Embedded in Database |
+
+---
+
+## 3. Module Breakdown
+
+### 3.1 Messaging Gateway
+
+**Purpose**: Interface with WhatsApp (primary), Telegram, Signal. Normalize messages into common format.
+
+**Technology Choice**: **OpenClaw**
+
+**Why OpenClaw**:
+- Already has WhatsApp, Telegram, Signal integrations
+- Multi-agent architecture fits our pipeline (canonicalizer, clusterer as separate agents)
+- Hooks system enables audit logging at every step
+- MIT licensed, can fork/extend
+- Runs locally — no vendor dependency
+
+**What we customize**:
+- Add user verification flow (account linking)
+- Add voting interaction flow
+- Connect to our database instead of OpenClaw's memory system
+
+**Key Components**:
+
+```
+messaging-gateway/
+├── agents/
+│   ├── intake/              # Receives submissions
+│   │   ├── AGENT.md
+│   │   └── tools/
+│   ├── voting/              # Sends vote prompts, receives votes
+│   │   ├── AGENT.md
+│   │   └── tools/
+│   └── notifications/       # Sends updates to users
+│       ├── AGENT.md
+│       └── tools/
+├── channels/
+│   ├── whatsapp/
+│   ├── telegram/
+│   └── signal/
+├── hooks/
+│   ├── message_received/    # Log to evidence store
+│   └── message_sent/        # Log to evidence store
+└── config.yaml
+```
+
+**Design Decisions**:
+
+| Decision | Choice | Rationale |
+|----------|--------|-----------|
+| Primary channel | WhatsApp | 81% of Iranians use VPNs; WhatsApp restrictions lifted Dec 2024 |
+| Account verification | Link existing account (not phone number) | Telegram/WhatsApp account age provides some sybil resistance without phone exposure |
+| Message format | Plain text, Farsi primary | Lowest friction; LLM handles translation |
+| Session management | Stateless per-message | Simpler; state lives in database |
+
+---
+
+### 3.2 Processing Pipeline
+
+**Purpose**: Transform raw submissions into clustered policy positions.
+
+**Sub-modules**:
+
+#### 3.2.1 Canonicalization Agent
+
+**Input**: Raw message text (Farsi or English)
+**Output**: Structured `PolicyCandidate`
+
+**Technology**: 
+- **Model**: Qwen3-8B (local) — sufficient for structured extraction
+- **Fallback**: DeepSeek V3.2 API for ambiguous cases
+
+**Processing Steps**:
+1. Detect language (Farsi, English, Kurdish, etc.)
+2. Extract policy concern(s) — may yield multiple candidates from one message
+3. Structure into `PolicyCandidate` schema
+4. Compute semantic embedding for clustering
+5. Store in database with link to original
+
+**Prompt Strategy**:
+```
+You are a policy structuring assistant. Given a user's freeform concern, 
+extract structured policy positions WITHOUT editorializing.
+
+Rules:
+- Preserve the user's intent exactly
+- Do not add opinions or framing
+- If the message contains multiple distinct concerns, output multiple candidates
+- Flag uncertainty rather than guessing
+
+Output JSON schema: {PolicyCandidate}
+```
+
+**Design Decisions**:
+
+| Decision | Choice | Rationale |
+|----------|--------|-----------|
+| Multi-issue handling | Split into separate candidates | Research shows joint prediction works; preserves granularity |
+| Language | Process in original language, translate for display | Preserves nuance; translation happens at display time |
+| Confidence threshold | <0.7 confidence → flag for review | Better to surface uncertainty than silently fail |
+| Schema rigidity | Hybrid (required core + flexible extensions) | Balance between consistency and expressiveness |
+
+#### 3.2.2 Clustering Agent
+
+**Input**: Set of `PolicyCandidate` records with embeddings
+**Output**: `Cluster` records with summaries
+
+**Technology**:
+- **Embeddings**: `multilingual-e5-large` (local) — validated for political text across languages
+- **Clustering**: HDBSCAN (density-based, no need to specify K)
+- **Summarization**: Qwen3-8B (local)
+
+**Processing Steps**:
+1. Load all candidates from current cycle (or delta since last run)
+2. Compute/retrieve embeddings
+3. Run HDBSCAN clustering
+4. For each cluster:
+   - Generate representative summary via LLM
+   - Compute cluster statistics (size, diversity)
+   - Link member candidates
+5. Store clusters with audit trail
+
+**Run Schedule**: 
+- **Batch**: Every 6 hours
+- **Future**: Consider incremental updates as volume grows
+
+**Design Decisions**:
+
+| Decision | Choice | Rationale |
+|----------|--------|-----------|
+| Clustering algorithm | HDBSCAN | No need to specify K; handles varying densities |
+| Granularity control | `min_cluster_size=5` | Prevent micro-clusters; can tune based on feedback |
+| Multi-run variance | Run 3x, flag high-variance clusters | Detect instability before publishing |
+| Small clusters | Show all (no suppression) | Transparency principle; minorities visible |
+
+#### 3.2.3 Agenda Builder
+
+**Input**: Clusters from current cycle
+**Output**: Voting agenda (subset of clusters)
+
+**Logic for v0**: Simple — all clusters above minimum size go to voting. No editorial selection.
+
+**Future considerations**:
+- Diversity weighting (geographic, demographic)
+- Recency vs. sustained interest
+- Topic balancing
+
+---
+
+### 3.3 Core Database
+
+**Purpose**: Single source of truth for all application data.
+
+**Technology Choice**: **PostgreSQL**
+
+**Why PostgreSQL**:
+- Mature, reliable, well-understood
+- JSONB for flexible schema fields
+- Full-text search for Farsi (with `pg_trgm` or external index)
+- Extensions: `pgvector` for embedding similarity search
+- Easy to backup, replicate, audit
+
+**Schema Overview**:
+
+```sql
+-- See Section 4 for full data models
+
+-- Core tables
+users
+submissions
+policy_candidates
+clusters
+votes
+voting_cycles
+
+-- Audit/evidence
+evidence_log (append-only)
+```
+
+**Evidence Store Implementation**:
+
+For v0, embed evidence store in PostgreSQL:
+
+```sql
+CREATE TABLE evidence_log (
+    id BIGSERIAL PRIMARY KEY,
+    timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    event_type TEXT NOT NULL,
+    entity_type TEXT NOT NULL,
+    entity_id UUID NOT NULL,
+    payload JSONB NOT NULL,
+    hash TEXT NOT NULL,           -- SHA-256 of payload
+    prev_hash TEXT NOT NULL,      -- Hash of previous entry (chain)
+    
+    -- Immutability enforced by:
+    -- 1. No UPDATE/DELETE permissions on this table
+    -- 2. Trigger that validates hash chain on INSERT
+);
+
+-- Index for verification queries
+CREATE INDEX idx_evidence_hash ON evidence_log(hash);
+CREATE INDEX idx_evidence_entity ON evidence_log(entity_type, entity_id);
+```
+
+**Witness.co Integration** (optional for v0):
+- Daily job: compute Merkle root of day's evidence entries
+- Submit root to Witness.co for Ethereum anchoring
+- Store anchor receipt in evidence_log
+
+**Design Decisions**:
+
+| Decision | Choice | Rationale |
+|----------|--------|-----------|
+| Database | PostgreSQL | Mature, pgvector for embeddings, JSONB flexibility |
+| Evidence store | Embedded hash-chain table | Simpler than separate system; sufficient for v0 scale |
+| Blockchain anchoring | Optional via Witness.co | External tamper evidence without running infrastructure |
+| Embedding storage | pgvector extension | Keep embeddings with data; similarity search built-in |
+
+---
+
+### 3.4 Public Website
+
+**Purpose**: Display analytics, allow subscription, show user dashboard.
+
+**Technology Choice**: **Next.js** (TypeScript)
+
+**Why Next.js**:
+- SSR for public analytics (SEO, fast initial load)
+- React for interactive dashboards
+- API routes for subscription flow
+- TypeScript for type safety across data models
+- Large ecosystem, easy to find developers
+
+**Pages**:
+
+```
+/                           # Landing + subscribe CTA
+/analytics                  # Public dashboard (no login required)
+/analytics/clusters         # Cluster explorer with drill-down
+/analytics/trends           # Time-series of policy interest
+/dashboard                  # Logged-in user's personal view
+/dashboard/submissions      # My submissions and their fate
+/dashboard/votes            # My votes
+/verify                     # Email/messaging verification flow
+/about                      # Mission, methodology, team
+/audit                      # Evidence explorer (technical users)
+```
+
+**Analytics Dashboard Components**:
+
+1. **Policy Landscape** — treemap or bubble chart of clusters by size
+2. **Top Policies** — ranked list with vote counts
+3. **Recent Activity** — stream of anonymized submissions
+4. **Demographic Breakdown** — if collected (optional)
+5. **Cluster Deep-Dive** — click cluster → see summary, source submissions (anonymized), vote distribution
+
+**Design Decisions**:
+
+| Decision | Choice | Rationale |
+|----------|--------|-----------|
+| Framework | Next.js (App Router) | SSR for public pages, React for dashboards |
+| Styling | Tailwind CSS | Rapid development, consistent design |
+| Charts | Recharts or D3 | Flexible, well-documented |
+| i18n | next-intl | Farsi RTL support built-in |
+| Auth | NextAuth.js with email magic links | Simple, no password management |
+
+**Internationalization**:
+
+- Primary: Farsi (RTL)
+- Secondary: English
+- UI chrome in both languages
+- User-generated content displayed in original language with optional translation toggle
+
+---
+
+### 3.5 Voting Service
+
+**Purpose**: Manage voting cycles, collect votes, tally results.
+
+**Implementation**: Part of Messaging Gateway + Database
+
+**Flow**:
+1. Agenda Builder produces voting agenda
+2. Voting Service creates `VotingCycle` record
+3. Messaging Gateway sends vote prompts to all verified users
+4. Users reply with votes (via messaging app)
+5. Votes recorded in database
+6. Cycle closes (time-based or threshold)
+7. Results computed and published
+
+**Voting Mechanism for v0**: **Approval Voting**
+
+- User sees list of policies in current cycle
+- User can approve any number (including zero)
+- Final score = count of approvals
+- Simple, understandable, no strategic complexity
+
+**Message Format**:
+```
+🗳️ صندوق رای باز است!
+
+این هفته، این سیاست‌ها مطرح شدند:
+
+1. [Policy summary in Farsi]
+2. [Policy summary in Farsi]
+3. [Policy summary in Farsi]
+
+برای رای دادن، شماره‌های موردنظر خود را بفرستید.
+مثال: 1, 3
+
+برای انصراف: "انصراف" بفرستید
+```
+
+**Design Decisions**:
+
+| Decision | Choice | Rationale |
+|----------|--------|-----------|
+| Mechanism | Approval voting | Simple, no vote-splitting, universally understood |
+| Cycle duration | 48 hours | Long enough for global participation across timezones |
+| Reminders | 1 reminder at 24h remaining | Balance engagement vs. annoyance |
+| Minimum participation | No threshold for v0 | Learn what natural participation looks like first |
+
+---
+
+## 4. Data Models
+
+### 4.1 User
+
+```typescript
+interface User {
+  id: UUID;
+  email: string;                    // For notifications, magic links
+  emailVerified: boolean;
+  
+  // Messaging account (primary interaction)
+  messagingPlatform: 'whatsapp' | 'telegram' | 'signal';
+  messagingAccountId: string;       // Platform-specific ID (not phone number)
+  messagingVerified: boolean;
+  messagingAccountAge?: Date;       // For sybil scoring
+  
+  // Metadata
+  createdAt: Date;
+  lastActiveAt: Date;
+  locale: 'fa' | 'en';              // Preferred language
+  
+  // Trust scoring (for future sybil resistance)
+  trustScore: number;               // Computed from signals
+  contributionCount: number;        // Approved submissions
+  
+  // Privacy
+  isAnonymous: boolean;             // True = inside-Iran, extra care
+}
+```
+
+### 4.2 Submission
+
+```typescript
+interface Submission {
+  id: UUID;
+  userId: UUID;
+  
+  // Content
+  rawText: string;                  // Original message
+  language: string;                 // Detected language code
+  
+  // Processing state
+  status: 'pending' | 'processed' | 'flagged' | 'rejected';
+  processedAt?: Date;
+  
+  // Audit
+  hash: string;                     // SHA-256 of rawText
+  createdAt: Date;
+  evidenceLogId: number;            // Link to evidence store entry
+}
+```
+
+### 4.3 PolicyCandidate
+
+```typescript
+interface PolicyCandidate {
+  id: UUID;
+  submissionId: UUID;               // Source submission
+  
+  // Structured content
+  title: string;                    // 5-15 words
+  titleEn?: string;                 // English translation
+  domain: PolicyDomain;             // Enum: governance, economy, rights, etc.
+  summary: string;                  // 1-3 sentences
+  summaryEn?: string;
+  stance: 'support' | 'oppose' | 'neutral' | 'unclear';
+  
+  // Extracted entities
+  entities: string[];               // Named entities mentioned
+  
+  // For clustering
+  embedding: number[];              // Vector from multilingual-e5-large
+  
+  // Quality signals
+  confidence: number;               // LLM confidence 0-1
+  ambiguityFlags: string[];         // e.g., 'sarcasm_possible', 'multi_issue'
+  
+  // Audit
+  modelVersion: string;             // Which model produced this
+  createdAt: Date;
+  evidenceLogId: number;
+}
+
+enum PolicyDomain {
+  GOVERNANCE = 'governance',        // System of government, elections
+  ECONOMY = 'economy',              // Jobs, inflation, sanctions
+  RIGHTS = 'rights',                // Human rights, women's rights
+  FOREIGN_POLICY = 'foreign_policy',
+  RELIGION = 'religion',            // Role of religion in state
+  ETHNIC = 'ethnic',                // Minority rights
+  JUSTICE = 'justice',              // Accountability, judiciary
+  OTHER = 'other'
+}
+```
+
+### 4.4 Cluster
+
+```typescript
+interface Cluster {
+  id: UUID;
+  cycleId: UUID;                    // Which clustering cycle
+  
+  // Content
+  summary: string;                  // Representative summary (Farsi)
+  summaryEn?: string;
+  domain: PolicyDomain;
+  
+  // Members
+  candidateIds: UUID[];             // PolicyCandidates in this cluster
+  memberCount: number;
+  
+  // Clustering metadata
+  centroidEmbedding: number[];
+  cohesionScore: number;            // How tight is the cluster
+  varianceFlag: boolean;            // True if multi-run showed instability
+  
+  // Voting
+  approvalCount: number;            // Updated as votes come in
+  
+  // Audit
+  createdAt: Date;
+  evidenceLogId: number;
+}
+```
+
+### 4.5 Vote
+
+```typescript
+interface Vote {
+  id: UUID;
+  userId: UUID;
+  cycleId: UUID;
+  
+  // Vote content
+  approvedClusterIds: UUID[];       // Clusters user approved
+  
+  // Audit
+  createdAt: Date;
+  evidenceLogId: number;
+  
+  // Privacy: votes are pseudonymous
+  // User can see their own; aggregates are public
+}
+```
+
+### 4.6 VotingCycle
+
+```typescript
+interface VotingCycle {
+  id: UUID;
+  
+  // Timing
+  startedAt: Date;
+  endsAt: Date;
+  status: 'active' | 'closed' | 'tallied';
+  
+  // Content
+  clusterIds: UUID[];               // Clusters in this cycle's agenda
+  
+  // Results (populated after close)
+  results?: {
+    clusterId: UUID;
+    approvalCount: number;
+    approvalRate: number;           // approvals / total votes
+  }[];
+  totalVoters: number;
+  
+  // Audit
+  evidenceLogId: number;
+}
+```
+
+### 4.7 EvidenceLogEntry
+
+```typescript
+interface EvidenceLogEntry {
+  id: number;                       // BIGSERIAL, monotonic
+  timestamp: Date;
+  
+  eventType: 
+    | 'submission_received'
+    | 'candidate_created'
+    | 'cluster_created'
+    | 'cluster_updated'
+    | 'vote_cast'
+    | 'cycle_opened'
+    | 'cycle_closed'
+    | 'user_created'
+    | 'user_verified';
+  
+  entityType: string;               // 'submission', 'cluster', etc.
+  entityId: UUID;
+  
+  payload: object;                  // Full snapshot of entity at this point
+  
+  hash: string;                     // SHA-256(JSON.stringify(payload))
+  prevHash: string;                 // Previous entry's hash (chain)
+}
+```
+
+---
+
+## 5. User Flows
+
+### 5.1 Subscription Flow
+
+```
+User visits website
+        │
+        ▼
+   Landing page
+   "What do Iranians want? Help us find out."
+        │
+        ▼
+   [Subscribe] button
+        │
+        ▼
+   Enter email
+        │
+        ▼
+   Receive magic link email
+        │
+        ▼
+   Click link → email verified
+        │
+        ▼
+   Prompt: "Connect WhatsApp"
+   (Show QR code or deep link)
+        │
+        ▼
+   User messages bot from WhatsApp
+        │
+        ▼
+   Bot verifies account link
+   (Checks account ID, age)
+        │
+        ▼
+   ✅ User fully verified
+   Bot: "شما آماده‌اید! نگرانی‌های خود را با ما به اشتراک بگذارید."
+```
+
+### 5.2 Submission Flow
+
+```
+User sends WhatsApp message
+"وضعیت اقتصادی خیلی بد است. تورم را کنترل کنید."
+        │
+        ▼
+   Gateway receives message
+   → Log to evidence store
+        │
+        ▼
+   Canonicalization Agent
+   → Extracts: {
+       title: "کنترل تورم",
+       domain: "economy",
+       summary: "درخواست کنترل تورم و بهبود شرایط اقتصادی",
+       confidence: 0.92
+     }
+   → Log to evidence store
+        │
+        ▼
+   Store PolicyCandidate
+   Compute embedding
+        │
+        ▼
+   Reply to user:
+   "✅ دریافت شد! نظر شما: «کنترل تورم»
+    می‌توانید وضعیت آن را در وبسایت ببینید."
+```
+
+### 5.3 Clustering Flow (Batch)
+
+```
+Cron trigger (every 6 hours)
+        │
+        ▼
+   Load new PolicyCandidates
+   since last run
+        │
+        ▼
+   Compute/retrieve embeddings
+        │
+        ▼
+   Run HDBSCAN clustering
+   (on all candidates, not just new)
+        │
+        ▼
+   For each cluster:
+   → Generate summary via LLM
+   → Compute statistics
+   → Log to evidence store
+        │
+        ▼
+   Update cluster table
+   (Merge with existing or create new)
+        │
+        ▼
+   Website auto-refreshes
+   (Public analytics update)
+```
+
+### 5.4 Voting Flow
+
+```
+Voting cycle starts (manual or scheduled)
+        │
+        ▼
+   Agenda Builder selects clusters
+   → All clusters with size ≥ 5
+        │
+        ▼
+   Create VotingCycle record
+   Log to evidence store
+        │
+        ▼
+   For each verified user:
+   → Send vote prompt via WhatsApp
+        │
+        ▼
+   User replies: "1, 3, 5"
+        │
+        ▼
+   Gateway parses vote
+   → Validate cluster IDs
+   → Create Vote record
+   → Log to evidence store
+        │
+        ▼
+   Reply: "✅ رای شما ثبت شد!"
+        │
+        ▼
+   (48 hours later)
+   Cycle closes
+        │
+        ▼
+   Tally results
+   Update cluster approvalCounts
+   Log to evidence store
+        │
+        ▼
+   Notify users:
+   "نتایج رای‌گیری: [link]"
+```
+
+### 5.5 User Dashboard Flow
+
+```
+User visits /dashboard
+        │
+        ▼
+   Auth check (magic link session)
+        │
+        ▼
+   Load user's submissions
+   For each:
+   → Show original text
+   → Show canonical form
+   → Show which cluster it's in
+   → Show cluster's current vote count
+        │
+        ▼
+   Load user's votes
+   For each cycle:
+   → Show what they voted for
+   → Show final results
+        │
+        ▼
+   User can:
+   → Flag if canonical form is wrong
+   → See full audit trail
+```
+
+---
+
+## 6. Technology Stack
+
+### 6.1 Summary
+
+| Layer | Technology | Rationale |
+|-------|------------|-----------|
+| **Messaging Gateway** | OpenClaw (TypeScript) | Multi-platform, agent architecture, hooks |
+| **AI Pipeline** | Python | Better ML ecosystem (transformers, HDBSCAN) |
+| **Database** | PostgreSQL + pgvector | Mature, embeddings, JSONB |
+| **Website** | Next.js (TypeScript) | SSR, React, good i18n |
+| **Hosting** | Single VPS (Hetzner/DigitalOcean) | Simple, cheap, EU-based for GDPR |
+| **Local LLM** | Qwen3-8B via vLLM or Ollama | Cost efficiency, privacy |
+| **Cloud LLM** | DeepSeek V3.2 API | 5-25× cheaper than GPT-4 |
+| **Embeddings** | multilingual-e5-large (local) | Validated for political text |
+
+### 6.2 Language Choices
+
+**TypeScript** for:
+- Messaging Gateway (OpenClaw is TypeScript)
+- Website (Next.js)
+- Shared type definitions
+
+**Python** for:
+- AI Pipeline (canonicalization, clustering)
+- Better ecosystem: transformers, sentence-transformers, hdbscan, scikit-learn
+
+**Shared**:
+- Data models defined in TypeScript, exported as JSON Schema
+- Python validates against same schema
+- Database is source of truth
+
+### 6.3 Monorepo Structure
+
+```
+collective-will/
+├── packages/
+│   ├── types/                    # Shared TypeScript types
+│   │   ├── src/
+│   │   │   ├── user.ts
+│   │   │   ├── submission.ts
+│   │   │   ├── cluster.ts
+│   │   │   └── index.ts
+│   │   └── package.json
+│   │
+│   ├── database/                 # Database schema, migrations
+│   │   ├── migrations/
+│   │   ├── schema.sql
+│   │   └── package.json
+│   │
+│   └── shared/                   # Shared utilities
+│       ├── src/
+│       │   ├── hash.ts
+│       │   └── evidence.ts
+│       └── package.json
+│
+├── apps/
+│   ├── gateway/                  # OpenClaw-based messaging gateway
+│   │   ├── agents/
+│   │   │   ├── intake/
+│   │   │   ├── voting/
+│   │   │   └── notifications/
+│   │   ├── channels/
+│   │   ├── hooks/
+│   │   ├── src/
+│   │   │   └── db.ts            # Database client
+│   │   ├── config.yaml
+│   │   └── package.json
+│   │
+│   ├── pipeline/                 # Python AI pipeline
+│   │   ├── agents/
+│   │   │   ├── canonicalize.py
+│   │   │   ├── cluster.py
+│   │   │   └── agenda.py
+│   │   ├── models/
+│   │   │   └── embeddings.py
+│   │   ├── scheduler.py         # Cron-like job runner
+│   │   ├── requirements.txt
+│   │   └── pyproject.toml
+│   │
+│   └── web/                      # Next.js website
+│       ├── app/
+│       │   ├── page.tsx         # Landing
+│       │   ├── analytics/
+│       │   ├── dashboard/
+│       │   └── api/
+│       ├── components/
+│       ├── lib/
+│       ├── messages/            # i18n strings
+│       │   ├── fa.json
+│       │   └── en.json
+│       └── package.json
+│
+├── docs/                         # Documentation (existing)
+├── docker-compose.yml            # Local development
+├── docker-compose.prod.yml       # Production
+└── README.md
+```
+
+### 6.4 Development Setup
+
+```bash
+# Prerequisites
+- Node.js 20+
+- Python 3.11+
+- PostgreSQL 15+
+- Docker (optional, for easy setup)
+
+# Quick start
+docker-compose up -d postgres
+pnpm install
+pnpm db:migrate
+pnpm dev                          # Starts all services
+
+# Or individually:
+pnpm --filter gateway dev
+pnpm --filter web dev
+cd apps/pipeline && python -m scheduler
+```
+
+### 6.5 Production Deployment
+
+**Single-server deployment for v0** (simplicity over scale):
+
+```yaml
+# docker-compose.prod.yml
+services:
+  postgres:
+    image: pgvector/pgvector:pg15
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    
+  gateway:
+    build: ./apps/gateway
+    environment:
+      - DATABASE_URL=postgres://...
+      - WHATSAPP_TOKEN=...
+    
+  pipeline:
+    build: ./apps/pipeline
+    environment:
+      - DATABASE_URL=postgres://...
+      - DEEPSEEK_API_KEY=...
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - capabilities: [gpu]  # For local LLM
+    
+  web:
+    build: ./apps/web
+    environment:
+      - DATABASE_URL=postgres://...
+    
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf
+      - ./certs:/etc/letsencrypt
+```
+
+**Server requirements**:
+- 4 CPU cores
+- 32GB RAM (for local LLM)
+- 24GB GPU (RTX 4090) OR 8GB GPU + cloud fallback
+- 200GB SSD
+- Location: EU (Netherlands or Germany for GDPR + Iran diaspora proximity)
+
+**Cost estimate**: ~$150-200/month (Hetzner dedicated with GPU) or ~$50/month (VPS + cloud LLM only)
+
+---
+
+## 7. Design Decisions
+
+### 7.1 Why OpenClaw for Messaging
+
+| Alternative | Pros | Cons | Decision |
+|-------------|------|------|----------|
+| **Build custom** | Full control | Months of work on WhatsApp integration | ❌ |
+| **OpenClaw** | Ready integrations, agent model fits | Learning curve, may need customization | ✅ |
+| **Twilio + custom** | Well-documented API | Higher cost, still need agent logic | ❌ |
+| **Matrix/Mautrix** | Open protocol | Worse WhatsApp support | ❌ |
+
+### 7.2 Why PostgreSQL (not specialized stores)
+
+| Alternative | Use Case | Why Not for v0 |
+|-------------|----------|----------------|
+| **Kafka** | Append-only log | Overkill; hash-chain in Postgres sufficient |
+| **MongoDB** | Flexible schema | Postgres JSONB is enough; lose ACID |
+| **Pinecone** | Vector search | pgvector sufficient; one less service |
+| **Redis** | Caching | Premature optimization |
+
+### 7.3 Why Local LLM First
+
+| Approach | Monthly Cost (1K submissions) | Latency | Privacy |
+|----------|-------------------------------|---------|---------|
+| **All cloud (GPT-4)** | ~$35 | Fast | Data leaves infra |
+| **All cloud (DeepSeek)** | ~$2 | Fast | Data leaves infra |
+| **Local + cloud fallback** | ~$0.50 | Medium | Stays local mostly |
+| **All local** | ~$0 | Slow | Full control |
+
+**Decision**: Local (Qwen3-8B) for canonicalization/clustering, DeepSeek for complex cases. Privacy-preserving and cost-effective.
+
+### 7.4 Why Approval Voting
+
+| Mechanism | Comprehension | Strategic Resistance | Implementation |
+|-----------|--------------|---------------------|----------------|
+| **Plurality** | Universal | Low | Trivial |
+| **Approval** | High | Medium | Simple |
+| **Ranked choice** | Medium | High | Complex |
+| **Quadratic** | Low-Medium | Medium-High | Complex + needs credits |
+
+**Decision**: Approval voting. Users understand it, implementation is simple, no vote-splitting problem.
+
+### 7.5 Why Batch Clustering (not real-time)
+
+- **Stability**: Clusters don't jump around as users watch
+- **Efficiency**: Embedding computation is batched
+- **Simplicity**: No complex incremental clustering logic
+- **Audit**: Clear cycle boundaries in evidence store
+
+**Tradeoff**: 6-hour delay between submission and cluster assignment. Acceptable for v0.
+
+### 7.6 Why Public Analytics (no login wall)
+
+- **Purpose**: Make collective will visible to everyone
+- **Trust**: Transparency builds credibility
+- **Reach**: Journalists, policymakers can cite without account
+- **Safety**: Aggregated data doesn't expose individuals
+
+### 7.7 Identity: Why No Phone Numbers
+
+Per research: Iranian SIAM system uses phone numbers for surveillance. Platform must not require phone verification.
+
+**What we use instead**:
+- Email verification (magic links)
+- Messaging account linking (account age is signal)
+- Contribution-based trust (approved submissions unlock voting)
+
+---
+
+## 8. What's In / Out of Scope
+
+### In Scope (v0)
+
+| Feature | Notes |
+|---------|-------|
+| WhatsApp submission intake | Primary channel |
+| Telegram intake | Secondary |
+| Email verification | Magic links |
+| Messaging account verification | Account age check |
+| Canonicalization (LLM) | Local Qwen3-8B |
+| Clustering (HDBSCAN) | Batch every 6 hours |
+| Approval voting | Via messaging app |
+| Public analytics dashboard | Anyone can view |
+| User dashboard | See own submissions/votes |
+| Evidence store | Hash-chain in Postgres |
+| Farsi + English UI | RTL support |
+| Basic audit explorer | For technical users |
+
+### Out of Scope (v0)
+
+| Feature | Why Deferred |
+|---------|-------------|
+| Action execution | v0 is about visibility, not action |
+| Signal integration | Lower priority; add if demand |
+| Quadratic/conviction voting | Start simple, iterate |
+| Federation/decentralization | Single server sufficient for pilot |
+| Blockchain anchoring | Optional; can add later |
+| Mobile app | Website + messaging app sufficient |
+| AI-generated translations | Start with human review |
+| Demographic collection | Privacy concerns; add carefully later |
+| Bridging algorithm | Can add after basic voting works |
+
+---
+
+## 9. Open Questions
+
+### Must Resolve Before Build
+
+1. **WhatsApp Business API access** — Need approved business account. What's the lead time? Cost? Alternatives if rejected?
+
+2. **OpenClaw customization scope** — How much modification needed? Fork or plugin? Who maintains?
+
+3. **Cluster summary quality** — Need sample data to test. Where do we get realistic Farsi policy submissions for development?
+
+### Can Resolve During Build
+
+4. **Voting cycle timing** — Start with 48 hours, adjust based on participation patterns.
+
+5. **Cluster granularity** — Start with `min_cluster_size=5`, tune based on feedback.
+
+6. **Trust scoring weights** — Start simple (account age + contributions), refine with data.
+
+### Can Resolve After Launch
+
+7. **Optimal clustering frequency** — 6 hours to start; could go to real-time if needed.
+
+8. **Translation strategy** — LLM auto-translate vs. human review vs. community edit.
+
+9. **Demographic insights** — If/when/how to collect and display.
+
+---
+
+## Appendix A: Evidence Store Events
+
+| Event | Payload |
+|-------|---------|
+| `submission_received` | `{ submissionId, userId, rawText, hash, timestamp }` |
+| `candidate_created` | `{ candidateId, submissionId, title, domain, summary, confidence, modelVersion }` |
+| `cluster_created` | `{ clusterId, cycleId, summary, candidateIds, memberCount }` |
+| `cluster_updated` | `{ clusterId, candidateIds, memberCount, reason }` |
+| `vote_cast` | `{ voteId, userId, cycleId, approvedClusterIds }` |
+| `cycle_opened` | `{ cycleId, clusterIds, startsAt, endsAt }` |
+| `cycle_closed` | `{ cycleId, results, totalVoters }` |
+| `user_created` | `{ userId, email, messagingPlatform }` |
+| `user_verified` | `{ userId, verificationType, timestamp }` |
+
+---
+
+## Appendix B: API Endpoints (Website)
+
+```
+GET  /api/analytics/clusters          # Public: all clusters with stats
+GET  /api/analytics/clusters/:id      # Public: cluster detail + members
+GET  /api/analytics/trends            # Public: time-series data
+GET  /api/cycles                      # Public: voting cycles
+GET  /api/cycles/:id/results          # Public: cycle results
+
+POST /api/auth/subscribe              # Start subscription flow
+GET  /api/auth/verify                 # Verify magic link
+POST /api/auth/link-messaging         # Initiate messaging link
+
+GET  /api/user/me                     # Authenticated: user profile
+GET  /api/user/submissions            # Authenticated: my submissions
+GET  /api/user/votes                  # Authenticated: my votes
+POST /api/user/flag                   # Authenticated: flag bad canonicalization
+
+GET  /api/evidence/:hash              # Public: verify evidence entry
+GET  /api/evidence/chain              # Public: verify hash chain integrity
+```
+
+---
+
+## Appendix C: Messaging Commands
+
+| User Input | Bot Response |
+|------------|--------------|
+| (any freeform text) | Process as submission → confirmation |
+| `وضعیت` / `status` | Show pending submissions, active votes |
+| `کمک` / `help` | Show available commands |
+| `رای` / `vote` | Show current voting agenda (if active) |
+| `1, 3, 5` (during voting) | Record vote → confirmation |
+| `انصراف` / `skip` | Skip current voting cycle |
+| `زبان` / `language` | Toggle Farsi/English |
+
+---
+
+## Appendix D: Milestones
+
+### Milestone 1: Foundation (Week 1-2)
+- [ ] Set up monorepo structure
+- [ ] PostgreSQL schema + migrations
+- [ ] Basic OpenClaw gateway with WhatsApp
+- [ ] "Hello world" message round-trip
+
+### Milestone 2: Pipeline (Week 3-4)
+- [ ] Canonicalization agent (Qwen3-8B)
+- [ ] Embedding computation
+- [ ] HDBSCAN clustering
+- [ ] Batch scheduler
+
+### Milestone 3: Website (Week 5-6)
+- [ ] Next.js setup with Farsi/English
+- [ ] Public analytics dashboard
+- [ ] User authentication (magic links)
+- [ ] User dashboard
+
+### Milestone 4: Voting (Week 7-8)
+- [ ] Voting cycle management
+- [ ] Vote collection via WhatsApp
+- [ ] Results display
+- [ ] Evidence store integration
+
+### Milestone 5: Polish (Week 9-10)
+- [ ] End-to-end testing
+- [ ] Security review
+- [ ] Documentation
+- [ ] Soft launch with test users
+
+---
+
+*This specification will evolve. All decisions are documented so they can be revisited as we learn from real usage.*
