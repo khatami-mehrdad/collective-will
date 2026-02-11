@@ -22,6 +22,44 @@
 
 ## 1. Product Overview
 
+### Core Principle: Visibility and Trust
+
+**Trust emerges from visibility, not authority.**
+
+This is the foundational principle of the entire system. Every design decision in this MVP prioritizes:
+
+1. **Visibility** — Users can see exactly what the system did with their input. Every submission, every canonicalization, every cluster assignment, every vote is traceable and publicly verifiable.
+
+2. **Trust through transparency** — The system earns trust not by claiming to be fair, but by proving it. The evidence store, public analytics, and audit trail exist so anyone can verify the pipeline worked correctly.
+
+3. **No hidden decisions** — The AI organizes, but doesn't editorialize. Clustering logic is published. Summaries link to source submissions. Nothing is suppressed.
+
+4. **User sovereignty** — Users can dispute canonicalization, see which cluster their submission joined, verify their vote was counted, and trace the full history.
+
+See [Visibility and Trust](visibility-and-trust.md) for the full technical approach to building verifiable trust.
+
+### How Do I Know You're Not Manipulating the Results?
+
+**Short answer: Don't trust us. Verify.**
+
+| "What if you..." | Our answer |
+|------------------|------------|
+| ...change my submission? | Your original text is hashed and stored. The canonical form is separate. You can see both and flag if they don't match. |
+| ...put me in the wrong cluster? | Every cluster links to its member submissions. Click through and judge for yourself. |
+| ...don't count my vote? | Your vote is in the evidence store with a hash. You can verify it's there. The public tally includes it. |
+| ...add fake votes? | Every vote links to a verified user. Registration requires email + messaging account verification. |
+| ...delete things you don't like? | The evidence store is append-only with a hash chain. Deleting anything breaks the chain — publicly detectable. |
+| ...bias the AI clustering? | We run clustering multiple times and flag variance. You can see the "why grouped" explanation for every cluster. |
+
+**What we can't fully prevent in v0** (honest limitations):
+- Operators with database access could theoretically insert fake users (solution: federation in v2)
+- AI clustering could have subtle bias (solution: multi-run analysis, external audits)
+- You have to trust our code is doing what we say (solution: open source, independent review)
+
+**The v0 promise**: We publish everything. If we're cheating, you can catch us.
+
+---
+
 ### Core Value Proposition
 
 Iranians don't know what other Iranians want. The regime controls public discourse, diaspora is fragmented, and no neutral platform surfaces collective preferences. Collective Will v0 answers: **"What do we, as a people, actually want?"**
@@ -38,7 +76,9 @@ Iranians don't know what other Iranians want. The regime controls public discour
 | Submissions | >200 unique policy concerns |
 | Voting participation | >30% of registered users vote |
 | Return visits (website) | >20% visit analytics weekly |
-| Trust indicator | >70% say clustering "fairly represents" their view |
+| **Trust: Fair representation** | >70% say clustering "fairly represents" their view |
+| **Trust: Dispute rate** | <10% of users flag canonicalization as wrong |
+| **Trust: Audit usage** | >5% of users check their submission trail |
 
 ---
 
@@ -980,6 +1020,25 @@ services:
 ---
 
 ## 7. Design Decisions
+
+### 7.0 Visibility and Trust as Non-Negotiable
+
+Every feature in v0 is filtered through one question: **"Can a user verify this?"**
+
+| Principle | Implementation |
+|-----------|----------------|
+| **Every input is preserved** | Raw submissions stored with hash; never modified |
+| **Every AI decision is logged** | Canonicalization, clustering logged to evidence store with model version |
+| **Every cluster is traceable** | Click any cluster → see member submissions |
+| **Every vote is verifiable** | User can see their vote in dashboard; aggregate tallies are public |
+| **No suppression** | All clusters shown, even small ones; no editorial filtering |
+| **Public by default** | Analytics visible to anyone; no login wall for transparency |
+
+This is why we have an evidence store, why clustering shows "why these were grouped," why users can flag bad canonicalization, and why the audit explorer exists.
+
+**If we can't make it visible, we don't build it.**
+
+---
 
 ### 7.1 Why OpenClaw for Messaging
 
