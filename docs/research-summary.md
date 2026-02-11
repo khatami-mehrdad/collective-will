@@ -18,7 +18,7 @@ This document summarizes all research conducted to inform MVP definition for Col
 | Identity/Sybil | [research-identity-sybil-resistance.md](research-identity-sybil-resistance.md) | Multi-signal scoring without KYC; phone verification dangerous for Iran; progressive trust |
 | Evidence Store | [research-transparency-log-implementations.md](research-transparency-log-implementations.md) | SQLite + hash chain + Witness.co for v0; migrate to Trillian Tessera at scale |
 | Legal/Regulatory | [research-legal-regulatory.md](research-legal-regulatory.md) | OFAC GL D-2 allows serving Iranians; 501(c)(4) structure; Resistbot model for compliance |
-| LLM Costs | [research-llm-cost-analysis.md](research-llm-cost-analysis.md) | $5-15/month estimate is realistic; DeepSeek 5-25× cheaper than competitors |
+| LLM Costs | [research-llm-cost-analysis.md](research-llm-cost-analysis.md) | $5-15/month API cost realistic; cloud-first for MVP simplicity |
 | Success Metrics | [research-success-metrics-failure-conditions.md](research-success-metrics-failure-conditions.md) | >90% of civic platform users are one-time; 50+ users completing pipeline = minimum viable |
 
 ---
@@ -55,16 +55,16 @@ This document summarizes all research conducted to inform MVP definition for Col
 
 **Rationale:** Multiple paths to voting without requiring KYC or phone numbers.
 
-### 3. AI Pipeline
+### 3. AI Pipeline (Cloud-First for MVP)
 
-| Stage | Model | Tier | Tokens/Submission |
-|-------|-------|------|-------------------|
-| Canonicalization | Qwen3-8B | Local | ~880 |
-| Embeddings | multilingual-e5-large | Local | ~100 |
-| Clustering | BERTopic + HDBSCAN | Local | ~70 (amortized) |
-| Action Planning | DeepSeek V3.2 | Cloud | ~14 (amortized) |
+| Stage | Model | Location | Notes |
+|-------|-------|----------|-------|
+| Canonicalization | Anthropic Claude / Mistral | Cloud | Text-only sent (no user IDs) |
+| Embeddings | multilingual-e5-large | Local (CPU) | Privacy-preserving |
+| Clustering | BERTopic + HDBSCAN | Local | No cloud dependency |
+| Summarization | Anthropic Claude / Mistral | Cloud | Anonymized cluster data |
 
-**89% of tokens stay local.** Cloud costs negligible at pilot scale.
+**Strategy:** Cloud-first for MVP simplicity. GPU infrastructure deferred until ~10K+ submissions/month. Data separation ensures user identity never leaves local infrastructure. See [MVP Specification §7.3](mvp-specification.md#73-why-cloud-first-for-mvp) for details.
 
 ### 4. Voting Mechanism
 
@@ -135,27 +135,28 @@ This document summarizes all research conducted to inform MVP definition for Col
 
 ---
 
-## Cost Estimates (Validated)
+## Cost Estimates (Updated for Cloud-First MVP)
 
 ### Monthly Costs at Pilot Scale (1,000 submissions)
 
 | Component | Cost |
 |-----------|------|
-| LLM inference (local) | $0 (hardware owned) |
-| Cloud API (DeepSeek) | $0.06 |
+| VPS (Hetzner CX32) | ~$9 |
+| Backup storage | ~$3 |
+| LLM API (Anthropic/Mistral) | $5-15 |
 | Witness.co anchoring | $3-5 |
-| VPS (if not self-hosted) | $10-20 |
-| **Total** | **$13-25/month** |
+| Domain (amortized) | ~$1 |
+| DNS/CDN (Cloudflare) | Free |
+| **Total** | **$20-30/month** |
 
-Original estimate of $5-15/month is achievable with self-hosted infrastructure.
+No GPU required for MVP. See [Infrastructure Guide](infrastructure-guide.md) for complete setup.
 
-### Hardware Requirements
+### Future Hardware (When Scaling Past 10K/month)
 
-| Scale | GPU | Cost |
-|-------|-----|------|
-| Dev/testing | RTX 4060 8GB | $300 |
-| <10K/month | RTX 3060 12GB | $275 (used) |
-| >20K/month | RTX 4090 24GB | $1,800 |
+| Scale | GPU | Monthly Server Cost |
+|-------|-----|---------------------|
+| 10K-50K/month | RTX 4060 8GB | ~$80-100 |
+| 50K-100K/month | RTX 4090 24GB | ~$150-200 |
 
 ---
 
@@ -191,7 +192,16 @@ Original estimate of $5-15/month is achievable with self-hosted infrastructure.
 
 ---
 
-## Research Documents Index
+## Documents Index
+
+### Core Documents
+
+| Document | Purpose |
+|----------|---------|
+| [mvp-specification.md](mvp-specification.md) | Complete MVP specification and architecture |
+| [infrastructure-guide.md](infrastructure-guide.md) | Step-by-step server setup and operations guide |
+
+### Research Documents
 
 | Document | Purpose |
 |----------|---------|
@@ -201,5 +211,5 @@ Original estimate of $5-15/month is achievable with self-hosted infrastructure.
 | [research-identity-sybil-resistance.md](research-identity-sybil-resistance.md) | Identity verification approaches |
 | [research-transparency-log-implementations.md](research-transparency-log-implementations.md) | Evidence store technology options |
 | [research-legal-regulatory.md](research-legal-regulatory.md) | Legal compliance requirements |
-| [research-llm-cost-analysis.md](research-llm-cost-analysis.md) | Cost model validation |
+| [research-llm-cost-analysis.md](research-llm-cost-analysis.md) | Cost model validation (includes local GPU analysis) |
 | [research-success-metrics-failure-conditions.md](research-success-metrics-failure-conditions.md) | How to measure success and failure |

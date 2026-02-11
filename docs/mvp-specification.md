@@ -1026,53 +1026,68 @@ cd apps/pipeline && python -m scheduler
 
 ### 6.6 Production Deployment
 
-**Single-server deployment for v0** (simplicity over scale):
+**Single-server deployment for v0** (simplicity over scale).
 
-```yaml
-# docker-compose.prod.yml
-services:
-  postgres:
-    image: pgvector/pgvector:pg15
-    volumes:
-      - ./data/postgres:/var/lib/postgresql/data
-    
-  gateway:
-    build: ./apps/gateway
-    environment:
-      - DATABASE_URL=postgres://...
-      - WHATSAPP_TOKEN=...
-    
-  pipeline:
-    build: ./apps/pipeline
-    environment:
-      - DATABASE_URL=postgres://...
-      - ANTHROPIC_API_KEY=...      # Or MISTRAL_API_KEY
-    
-  web:
-    build: ./apps/web
-    environment:
-      - DATABASE_URL=postgres://...
-    
-  nginx:
-    image: nginx:alpine
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf
-      - ./certs:/etc/letsencrypt
+> **📖 See [Infrastructure Guide](infrastructure-guide.md)** for complete step-by-step setup instructions.
+
+**Architecture Summary:**
+
+```
+Internet → Cloudflare (DNS/CDN) → Hetzner VPS
+                                      │
+                    ┌─────────────────┼─────────────────┐
+                    │                 │                 │
+                    ▼                 ▼                 ▼
+                  nginx ──────► web (Next.js)     gateway
+                    │               │            (OpenClaw)
+                    │               │                 │
+                    │               └────────┬────────┘
+                    │                        ▼
+                    │                    postgres
+                    │                   (pgvector)
+                    │                        │
+                    └──► pipeline ───────────┘
+                        (Python AI)
 ```
 
-**Server requirements** (cloud LLM approach):
-- 4 CPU cores
-- 16GB RAM (for embeddings model + application)
-- No GPU required — embeddings run on CPU, LLM calls go to cloud
-- 100GB SSD
-- Location: EU (Netherlands or Germany for GDPR + Iran diaspora proximity)
+**Recommended Setup:**
 
-**Cost estimate**: ~$50/month (Hetzner VPS or DigitalOcean) + ~$5-15/month LLM API costs
+| Component | Specification |
+|-----------|---------------|
+| Provider | **Hetzner Cloud** (EU jurisdiction, privacy-friendly) |
+| Plan | CX32 (4 vCPU, 8GB RAM, 80GB SSD) |
+| Location | Falkenstein or Helsinki (EU) |
+| OS | Ubuntu 22.04 LTS |
+| Deployment | Docker Compose |
 
-**Future scaling**: When volume justifies local LLM infrastructure (~10K+ submissions/month), upgrade to GPU server (~$150-200/month) and switch to local models.
+**Why Hetzner over AWS:**
+- **EU jurisdiction** (Germany) — strong privacy laws, no US CLOUD Act
+- **5-10× cheaper** for equivalent specs
+- **Simple pricing** — no surprise bills
+- **Sufficient for MVP** — handles <1000 concurrent users easily
+
+**Monthly Cost Breakdown:**
+
+| Item | Cost |
+|------|------|
+| VPS (Hetzner CX32) | €8.50 (~$9) |
+| Backup storage (100GB) | €3 (~$3) |
+| LLM API (Anthropic/Mistral) | $5-15 |
+| Domain (amortized) | ~$1 |
+| DNS/CDN (Cloudflare) | Free |
+| SSL (Let's Encrypt) | Free |
+| **Total** | **~$20-30/month** |
+
+**Infrastructure Guide covers:**
+- [ ] Server provisioning and SSH setup
+- [ ] Docker installation and configuration  
+- [ ] Domain, DNS (Cloudflare), and HTTPS (Let's Encrypt)
+- [ ] Database access methods (SSH tunnel, GUI tools)
+- [ ] Automated backup strategy
+- [ ] Security hardening (firewall, fail2ban, etc.)
+- [ ] Monitoring and alerting
+
+**Future scaling**: When volume exceeds ~10K submissions/month, consider dedicated server with GPU for local LLM inference.
 
 ---
 
