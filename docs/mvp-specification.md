@@ -876,7 +876,60 @@ User visits /dashboard
 - Python validates against same schema
 - Database is source of truth
 
-### 6.3 Monorepo Structure
+### 6.3 TypeScript Security & Memory Guidelines
+
+TypeScript is chosen for speed-to-MVP, but we treat it as a liability to manage, not a guarantee of safety.
+
+#### Dependency Security
+
+| Practice | Implementation |
+|----------|----------------|
+| **Minimal dependencies** | Every npm package is a risk; justify each one |
+| **Lock versions** | Use `package-lock.json`; pin exact versions |
+| **Audit regularly** | Run `npm audit` in CI; block deploys on critical vulns |
+| **Avoid deep trees** | Prefer packages with few transitive dependencies |
+| **No postinstall scripts** | Disable with `ignore-scripts=true` where possible |
+
+#### Memory Management
+
+| Practice | Implementation |
+|----------|----------------|
+| **Monitor heap usage** | Use `--max-old-space-size` flag; alert on threshold |
+| **Avoid memory leaks** | No global caches that grow unbounded; use WeakMap where appropriate |
+| **Stream large data** | Don't load full evidence store into memory; use cursors/pagination |
+| **Profile under load** | Test with realistic message volume before launch |
+| **Set timeouts** | All external calls (DB, API) have timeouts; prevent hung connections |
+
+#### Secure Coding Practices
+
+| Practice | Implementation |
+|----------|----------------|
+| **Strict TypeScript** | `"strict": true` in tsconfig; no `any` types |
+| **Input validation** | Validate all user input with Zod or similar; never trust messaging payloads |
+| **No eval/Function** | Never execute dynamic code |
+| **Parameterized queries** | Use query builders (Kysely, Drizzle); no string concatenation for SQL |
+| **Secrets management** | Environment variables only; never in code; rotate regularly |
+| **Rate limiting** | On all endpoints; prevent abuse |
+
+#### Crypto Operations
+
+| Operation | Approach |
+|-----------|----------|
+| **Hashing (evidence store)** | Use Node.js built-in `crypto` module (C++ bindings), not npm packages |
+| **Future: signatures** | Consider calling Go/Rust microservice for signing operations |
+| **Random generation** | Use `crypto.randomUUID()`, not `Math.random()` |
+
+#### Migration Path (If Needed at Scale)
+
+If we reach scale where TypeScript becomes a bottleneck or security liability:
+
+1. **Evidence store service** → Rewrite in Rust (crypto operations, append-only log)
+2. **Message routing** → Rewrite in Go (high-concurrency, low-latency)
+3. **Keep TypeScript for** → Web frontend, admin interfaces, non-critical paths
+
+Design interfaces now (via API boundaries) so these rewrites are possible without full system redesign.
+
+### 6.4 Monorepo Structure
 
 ```
 collective-will/
@@ -943,7 +996,7 @@ collective-will/
 └── README.md
 ```
 
-### 6.4 Development Setup
+### 6.5 Development Setup
 
 ```bash
 # Prerequisites
@@ -964,7 +1017,7 @@ pnpm --filter web dev
 cd apps/pipeline && python -m scheduler
 ```
 
-### 6.5 Production Deployment
+### 6.6 Production Deployment
 
 **Single-server deployment for v0** (simplicity over scale):
 
