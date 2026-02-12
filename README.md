@@ -59,42 +59,31 @@ See **[MVP Specification](docs/mvp-specification.md)** for the full technical de
 
 ---
 
-## Context & Prior Art
-
-What exists, what we can learn from, and where this project fits in the landscape.
-
-- **[Landscape & Prior Art](docs/landscape.md)** — existing tools and projects that overlap with parts of this system (Polis, Talk to the City, DCAN, Resistbot, Decidim, and others), what they do well, where they stop, and what it means for this project.
-- **[Roadmap](docs/roadmap.md)** — what v0 includes, what's deliberately excluded and why, the direction after v0, and open questions about what success looks like.
-
----
-
 ## Technical Design
 
-How the system works, how trust is built, and how it could be implemented.
+Core documents for understanding and building the MVP.
 
 - **[MVP Specification](docs/mvp-specification.md)** — the complete v0 technical design: architecture, modules, data models, user flows, technology stack, and implementation milestones.
-- **[Agent Design](docs/agents.md)** — how the canonicalization, clustering, and action planning agents work, what their input/output contracts look like, and the hard unsolved problems around bias, quality evaluation, and schema design.
-- **[Architecture](docs/architecture.md)** — the full pipeline from submission to action, the evidence store, a worked example following a user through the entire lifecycle, and open questions about storage, scaling, and processing models.
-- **[Governance and Trust](docs/governance-and-trust.md)** — the trust model, separation of power between roles, the threat model, decentralization approach, and open questions about identity, voting mechanisms, and protocol governance.
-- **[Visibility and Trust](docs/visibility-and-trust.md)** — how to actually build verifiable trust: transparency logs, signed agent receipts, verifiable AI, sybil-resistant identity, end-to-end verifiable voting, and why most of this doesn't require blockchain.
-- **[Channel Integration Research](docs/openclaw-as-infrastructure.md)** — research on messaging frameworks (OpenClaw, Automagik Omni, direct libraries), why we chose direct channel integrations in Python, and what patterns we borrowed.
-- **[LLM Strategy & Model Selection](docs/llm-strategy.md)** — latest open-source models (Feb 2026), hybrid local/cloud architecture for low-cost MVP, and action plan (Qwen3-8B, MiMo-V2-Flash, DeepSeek V3.2/V4).
+- **[Roadmap](docs/roadmap.md)** — what v0 includes, what's deliberately excluded and why.
+- **[Agent Design](docs/agents.md)** — how the canonicalization, clustering, and action planning agents work.
+- **[LLM Strategy](docs/llm-strategy.md)** — which LLMs for which tasks, cost estimates, hybrid architecture.
+- **[Infrastructure Guide](docs/infrastructure-guide.md)** — deployment setup, Docker, hosting options.
 
 ---
 
-## Pre-MVP Research
+## Pre-MVP Research (Archive)
 
-Research conducted to inform MVP definition. All documents have detailed findings with citations.
+Research conducted to inform MVP decisions. Decisions are now captured in the main docs above.
 
-- **[Research Summary](docs/research-summary.md)** — consolidated findings, key decisions, cost estimates, success criteria, and next steps.
-- **[Iran Pilot Community](docs/research-iran-pilot-community.md)** — why Iran, trust landscape, messaging apps, safety considerations, and design implications.
-- **[Canonicalization Evaluation](docs/research-llm-canonicalization-evaluation.md)** — how to evaluate LLM text structuring, metrics, schema design, failure modes.
-- **[Action Types & Templates](docs/research-action-types-templates.md)** — what civic actions to support, template design, diaspora advocacy, platform constraints.
-- **[Identity & Sybil Resistance](docs/research-identity-sybil-resistance.md)** — verification tiers, multi-signal scoring, authoritarian context safety.
-- **[Transparency Log Implementations](docs/research-transparency-log-implementations.md)** — Trillian vs Rekor vs SCITT vs simpler approaches.
-- **[Legal & Regulatory](docs/research-legal-regulatory.md)** — OFAC, GDPR, platform ToS, FARA, legal structure.
-- **[LLM Cost Analysis](docs/research-llm-cost-analysis.md)** — validated cost model, local vs cloud, scale scenarios.
-- **[Success Metrics & Failure Conditions](docs/research-success-metrics-failure-conditions.md)** — what to measure, kill criteria, prior art lessons.
+See **[docs/research/](docs/research/)** for:
+- Landscape & prior art analysis
+- Channel integration research (OpenClaw evaluation)
+- Iran pilot community research
+- Identity & Sybil resistance options
+- Transparency log implementations
+- Legal & regulatory considerations
+- LLM cost analysis
+- Success metrics & failure conditions
 
 ---
 
