@@ -300,6 +300,7 @@ Output JSON schema: {PolicyCandidate}
 | Clustering algorithm | HDBSCAN | No need to specify K; handles varying densities |
 | Granularity control | `min_cluster_size=5` | Prevent micro-clusters; can tune based on feedback |
 | Multi-run variance | Run 3x, flag high-variance clusters | Detect instability before publishing |
+| Reproducibility | Log random seed, HDBSCAN params, prompt version, and run ID per cycle | If challenged, anyone can re-run the exact pipeline |
 | Small clusters | Show all (no suppression) | Transparency principle; minorities visible |
 
 #### 3.2.3 Agenda Builder
@@ -403,25 +404,34 @@ CREATE INDEX idx_evidence_entity ON evidence_log(entity_type, entity_id);
 **Pages**:
 
 ```
+# Core trust loop (ship first)
 /                           # Landing + subscribe CTA
 /analytics                  # Public dashboard (no login required)
 /analytics/clusters         # Cluster explorer with drill-down
-/analytics/trends           # Time-series of policy interest
 /dashboard                  # Logged-in user's personal view
 /dashboard/submissions      # My submissions and their fate
 /dashboard/votes            # My votes
 /verify                     # Email/messaging verification flow
 /about                      # Mission, methodology, team
 /audit                      # Evidence explorer (technical users)
+
+# Post-launch enhancements
+/analytics/trends           # Time-series of policy interest
 ```
 
 **Analytics Dashboard Components**:
 
-1. **Policy Landscape** — treemap or bubble chart of clusters by size
-2. **Top Policies** — ranked list with vote counts
-3. **Recent Activity** — stream of anonymized submissions
-4. **Demographic Breakdown** — if collected (optional)
-5. **Cluster Deep-Dive** — click cluster → see summary, source submissions (anonymized), vote distribution
+*Core trust loop (ship first):*
+1. **Cluster Explorer** — list of clusters with size, click to drill into summary + member submissions (anonymized)
+2. **Submission Verification** — authenticated users can confirm their submission exists and trace its journey
+3. **Audit Evidence Viewer** — hash chain explorer for technical users
+4. **Top Policies** — ranked list with vote counts
+
+*Post-launch enhancements:*
+5. **Policy Landscape** — treemap or bubble chart of clusters by size
+6. **Trends** — time-series of policy interest over cycles
+7. **Recent Activity** — stream of anonymized submissions
+8. **Demographic Breakdown** — if collected (deferred; privacy concerns)
 
 **Design Decisions**:
 
@@ -568,8 +578,9 @@ interface PolicyCandidate {
   confidence: number;               // LLM confidence 0-1
   ambiguityFlags: string[];         // e.g., 'sarcasm_possible', 'multi_issue'
   
-  // Audit
+  // Audit & reproducibility
   modelVersion: string;             // Which model produced this
+  promptVersion: string;            // Version hash of the canonicalization prompt
   createdAt: Date;
   evidenceLogId: number;
 }
@@ -602,10 +613,13 @@ interface Cluster {
   candidateIds: UUID[];             // PolicyCandidates in this cluster
   memberCount: number;
   
-  // Clustering metadata
+  // Clustering metadata & reproducibility
   centroidEmbedding: number[];
   cohesionScore: number;            // How tight is the cluster
   varianceFlag: boolean;            // True if multi-run showed instability
+  runId: string;                    // Unique ID for this clustering run
+  randomSeed: number;               // Seed used for reproducibility
+  clusteringParams: object;         // HDBSCAN parameters used (min_cluster_size, etc.)
   
   // Voting
   approvalCount: number;            // Updated as votes come in
@@ -1328,6 +1342,28 @@ Per research: Iranian SIAM system uses phone numbers for surveillance. Platform 
 
 ---
 
+### 7.8 Coercion-Resistant Verification
+
+**The problem**: In authoritarian contexts, users may be forced to prove how they voted or what they submitted. A verification system that lets users prove inclusion to themselves must not create transferable proof that a third party could demand.
+
+**Design principles**:
+
+| Principle | Implementation |
+|-----------|----------------|
+| **Self-only verification** | Users can verify their submission/vote exists via their authenticated dashboard, but cannot export a standalone proof |
+| **No transferable receipts** | Verification tokens are session-bound; they prove inclusion to the logged-in user, not to an arbitrary third party |
+| **Timestamp obfuscation** | Submissions are batched and shuffled before processing; individual timing is not exposed in public views |
+| **Plausible deniability** | Users can see aggregate results but cannot prove their individual contribution to an outside observer |
+
+**What this means concretely**:
+- The `/verify` endpoint requires authentication — no anonymous proof lookup
+- The evidence store is public for aggregate chain integrity, but individual entries are keyed by internal IDs, not user-facing tokens
+- Vote records are pseudonymous: users see their own votes in their dashboard, but cannot generate a shareable "I voted for X" certificate
+
+**Tradeoff acknowledged**: This reduces transparency slightly (a user cannot independently prove to a journalist "my vote was counted"). We accept this tradeoff because coercion resistance is more important in the Iran context than third-party verifiability. External auditors can verify the aggregate chain without individual attribution.
+
+---
+
 ## 8. What's In / Out of Scope
 
 ### In Scope (v0)
@@ -1335,7 +1371,6 @@ Per research: Iranian SIAM system uses phone numbers for surveillance. Platform 
 | Feature | Notes |
 |---------|-------|
 | WhatsApp submission intake | Primary channel |
-| Telegram intake | Secondary |
 | Email verification | Magic links |
 | Messaging account verification | Account age check |
 | Canonicalization (LLM) | Cloud API (Anthropic/Mistral) with data separation |
@@ -1352,6 +1387,7 @@ Per research: Iranian SIAM system uses phone numbers for surveillance. Platform 
 | Feature | Why Deferred |
 |---------|-------------|
 | Action execution | v0 is about visibility, not action |
+| Telegram intake | Prove end-to-end flow with WhatsApp first; each additional channel multiplies verification complexity, abuse vectors, and maintenance overhead |
 | Signal integration | Lower priority; add if demand |
 | Quadratic/conviction voting | Start simple, iterate |
 | Federation/decentralization | Single server sufficient for pilot |
@@ -1396,8 +1432,8 @@ Per research: Iranian SIAM system uses phone numbers for surveillance. Platform 
 | Event | Payload |
 |-------|---------|
 | `submission_received` | `{ submissionId, userId, rawText, hash, timestamp }` |
-| `candidate_created` | `{ candidateId, submissionId, title, domain, summary, confidence, modelVersion }` |
-| `cluster_created` | `{ clusterId, cycleId, summary, candidateIds, memberCount }` |
+| `candidate_created` | `{ candidateId, submissionId, title, domain, summary, confidence, modelVersion, promptVersion }` |
+| `cluster_created` | `{ clusterId, cycleId, summary, candidateIds, memberCount, runId, randomSeed, clusteringParams }` |
 | `cluster_updated` | `{ clusterId, candidateIds, memberCount, reason }` |
 | `vote_cast` | `{ voteId, userId, cycleId, approvedClusterIds }` |
 | `cycle_opened` | `{ cycleId, clusterIds, startsAt, endsAt }` |
