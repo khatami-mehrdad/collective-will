@@ -8,6 +8,7 @@
 
 ## Table of Contents
 
+0. [v0 Frozen Decisions](#v0-frozen-decisions)
 1. [Product Overview](#1-product-overview)
 2. [System Architecture](#2-system-architecture)
 3. [Module Breakdown](#3-module-breakdown)
@@ -17,6 +18,112 @@
 7. [Design Decisions](#7-design-decisions)
 8. [What's In / Out of Scope](#8-whats-in--out-of-scope)
 9. [Open Questions](#9-open-questions)
+
+---
+
+## v0 Frozen Decisions
+
+These decisions are locked for v0. They override any conflicting text elsewhere in the docs.
+
+### Scope
+
+- **v0 = consensus visibility + approval voting.** No action drafting, no action execution.
+- Action planning and execution are deferred to v1.
+
+### Channel
+
+- **WhatsApp only** (via Evolution API, self-hosted). Telegram and Signal are deferred.
+- Each additional channel multiplies verification complexity, abuse vectors, and maintenance overhead. Prove the end-to-end trust loop with one channel first.
+
+### WhatsApp Gateway
+
+- **v0**: Evolution API (self-hosted Docker container). No Meta business verification required. Suitable for development and early pilot (up to a few hundred users).
+- **v1**: Migrate to official WhatsApp Business API when user count exceeds a few hundred or when stability/compliance requires it.
+- The abstract channel interface (`channels/base.py`) ensures the swap only affects `whatsapp.py`.
+
+### AI Models
+
+- **Canonicalization**: Claude Haiku (Farsi -> structured English).
+- **Embeddings**: Mistral `mistral-embed` API (cloud). No local model dependency for v0. Switch to local (e.g. `multilingual-e5-large`) if privacy or cost requires it at scale.
+- **Cluster summaries**: DeepSeek V3.2 API.
+- **User-facing messages**: Claude Haiku (Farsi quality).
+- **Clustering algorithm**: HDBSCAN (runs locally on returned vectors).
+
+### Identity and Sybil Resistance
+
+- **Verification path**: email magic-link + WhatsApp account linking. One path, no alternatives in v0.
+- **No mandatory phone verification.** WhatsApp account IDs are tokenized (`HMAC(wa_id, secret_pepper)`); raw identifiers are isolated in a sealed mapping service and stripped from logs/exports.
+- **No OAuth, no vouching, no KYC.** These add linkage/governance complexity and can exclude high-risk users.
+- **Submission eligibility**: verified account (email + WhatsApp linked) + account age >= 48 hours.
+- **Vote eligibility**: verified account + account age >= 48 hours + at least 1 accepted submission.
+
+### Abuse Thresholds
+
+| Control | Limit |
+|---------|-------|
+| Submissions per account per day | 5 |
+| Accounts per email domain per day | 3 |
+| Burst quarantine trigger | 10+ submissions/hour from one account |
+| Vote changes per cycle | 1 (can update vote once before cycle closes) |
+| Failed verification attempts | 5 per email per 24 hours, then 24-hour lockout |
+
+Quarantined accounts are flagged for manual review. Submissions from quarantined accounts are held (not processed or published) until review.
+
+### Evidence Store
+
+- **Implementation**: PostgreSQL append-only hash-chain table. No UPDATE/DELETE permissions. Insert trigger validates chain integrity.
+- **External anchoring**: Optional for v0 launch. Daily Merkle-root export to Witness.co is recommended but not required before pilot.
+- **Reproducibility metadata**: every evidence entry includes model version, prompt version, clustering parameters, run ID, and random seed where applicable.
+
+### Dispute Handling
+
+- Users flag bad canonicalization or cluster assignment via their authenticated dashboard.
+- Operator reviews flagged items within 72 hours.
+- Disputed items are tagged (`dispute_open`, `dispute_resolved`) but never removed or suppressed.
+- Resolution is logged to the evidence store with operator justification.
+- The operator does not claim editorial authority. Disputes are resolved by re-running the pipeline or adjusting parameters, not by manual override of content.
+
+### Data Retention and Deletion
+
+| Data | Retention | Deletable on user request? |
+|------|-----------|---------------------------|
+| Evidence chain entries | Immutable, permanent | No (integrity of chain) |
+| Account linkage (email, wa_id mapping) | Until deletion request | Yes (GDPR right to erasure) |
+| Tokenized user references in evidence chain | Permanent | No (but unlinkable after account deletion) |
+| Raw submissions | Permanent (in evidence chain) | User link severed on deletion; text preserved anonymously |
+| Votes | Permanent (pseudonymous) | User link severed on deletion |
+
+When a user requests deletion, the account mapping is destroyed. Evidence chain entries remain but become unlinkable to any real identity.
+
+### Infrastructure
+
+- **Domain**: registered via Njalla or 1984.is (WHOIS shows registrar, not owner). Credit card payment is acceptable.
+- **Hosting**: Njalla VPS or 1984.is (privacy jurisdiction). Not standard identity-verified providers like Hetzner.
+- **All public-facing accounts**: pseudonymous (git, GitHub, project email via ProtonMail).
+- **Non-public accounts** (WhatsApp Business API, LLM API, dev tools): regular accounts with credit card are acceptable.
+
+### Pilot Success and Kill Criteria
+
+**30-day checkpoint:**
+- >= 50 registered users
+- >= 20 submissions
+- No critical security incidents
+- Evidence chain integrity verified
+
+**60-day checkpoint:**
+- >= 100 registered users
+- >= 50 total submissions
+- >= 1 completed voting cycle
+- \> 70% of surveyed users rate clustering as "fair" (4+ out of 5)
+- < 10% dispute rate on canonicalization
+
+**90-day kill criteria (stop if ANY is true):**
+- < 100 registered users
+- < 50 total submissions
+- \> 40% negative satisfaction ratings
+- Zero voting participation
+- AI clustering accuracy < 60% (human evaluation)
+- Critical unresolved security vulnerability
 
 ---
 
@@ -124,16 +231,16 @@ Iranians don't know what other Iranians want. The regime controls public discour
 │                    MESSAGING GATEWAY (Python)                     │
 │  ┌──────────────────────────────────────────────────────────┐   │
 │  │                    FastAPI + Channels                     │   │
-│  │  ┌─────────┐  ┌─────────┐  ┌─────────┐                   │   │
-│  │  │WhatsApp │  │Telegram │  │ Signal  │                   │   │
-│  │  │(Evo API)│  │  (PTB)  │  │(sig-cli)│                   │   │
-│  │  └─────────┘  └─────────┘  └─────────┘                   │   │
+│  │  ┌─────────┐                                              │   │
+│  │  │WhatsApp │  (Telegram, Signal deferred to post-v0)      │   │
+│  │  │(Evo API)│                                              │   │
+│  │  └─────────┘                                              │   │
 │  └──────────────────────────────────────────────────────────┘   │
 └──────────────────────────────────────────────────────────────────┘
                               ▲
                               │
                            USERS
-                    (WhatsApp primary)
+                    (WhatsApp only for v0)
 ```
 
 ### Module Boundaries
@@ -152,7 +259,7 @@ Iranians don't know what other Iranians want. The regime controls public discour
 
 ### 3.1 Messaging Gateway
 
-**Purpose**: Interface with WhatsApp (primary), Telegram, Signal. Normalize messages into common format.
+**Purpose**: Interface with WhatsApp (v0 only channel). Normalize messages into common format. Architecture supports adding channels later via the abstract base class.
 
 **Technology Choice**: **Direct channel integrations (Python)**
 
@@ -163,10 +270,12 @@ Iranians don't know what other Iranians want. The regime controls public discour
 - Better auditability — every line is ours to inspect and explain
 - Python ecosystem for AI/clustering is superior
 
-**Channel libraries**:
+**Channel libraries (v0)**:
 - **WhatsApp**: Evolution API (self-hosted gateway) — handles Baileys complexity, exposes REST/webhooks
-- **Telegram**: python-telegram-bot — mature, well-documented, 25k+ stars
-- **Signal**: signal-cli + signal-bot wrapper — signal-cli is the actively maintained option
+
+**Deferred channels** (post-v0, when trust loop is stable):
+- **Telegram**: python-telegram-bot
+- **Signal**: signal-cli + Python wrapper
 
 **Key Components**:
 
@@ -176,8 +285,6 @@ src/
 │   ├── __init__.py
 │   ├── base.py              # Abstract channel interface
 │   ├── whatsapp.py          # Evolution API client
-│   ├── telegram.py          # python-telegram-bot wrapper
-│   ├── signal.py            # signal-cli wrapper
 │   └── types.py             # Unified message format
 ├── handlers/
 │   ├── __init__.py
@@ -195,8 +302,9 @@ src/
 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
-| Primary channel | WhatsApp | 81% of Iranians use VPNs; WhatsApp restrictions lifted Dec 2024 |
-| Account verification | Link existing account (not phone number) | Telegram/WhatsApp account age provides some sybil resistance without phone exposure |
+| v0 channel | WhatsApp only | Prove trust loop with one channel; each additional channel multiplies complexity |
+| WhatsApp gateway | Evolution API (self-hosted) | No Meta approval needed; Docker container; migrate to official Business API at v1 |
+| Account verification | Email magic-link + WhatsApp account linking | See [v0 Frozen Decisions](#v0-frozen-decisions) |
 | Message format | Plain text, Farsi primary | Lowest friction; LLM handles translation |
 | Session management | Stateless per-message | Simpler; state lives in database |
 
@@ -241,7 +349,7 @@ See [operational-security.md](operational-security.md) for the full risk-tier fr
 5. Detect language (Farsi, English, Kurdish, etc.)
 6. Extract policy concern(s) — may yield multiple candidates from one message
 7. Structure into `PolicyCandidate` schema
-8. Compute semantic embedding locally (CPU)
+8. Compute semantic embedding via Mistral `mistral-embed` API (batched with canonicalized text)
 9. Store structured result, link back to original submission
 
 **Prompt Strategy**:
@@ -275,8 +383,8 @@ Output JSON schema: {PolicyCandidate}
 **Output**: `Cluster` records with summaries
 
 **Technology**:
-- **Embeddings**: `multilingual-e5-large` (local, CPU) — stays local for privacy; CPU sufficient for batch processing at MVP scale
-- **Clustering**: HDBSCAN (density-based, no need to specify K) — runs locally
+- **Embeddings**: Mistral `mistral-embed` API (cloud) — no local model dependency for v0; switch to local embeddings if privacy or cost requires it at scale
+- **Clustering**: HDBSCAN (density-based, no need to specify K) — runs locally on returned vectors
 - **Summarization**: Anthropic Claude or Mistral API (cloud) — receives only aggregated/anonymized cluster content, not individual submissions
 
 **Processing Steps**:
@@ -511,9 +619,9 @@ interface User {
   email: string;                    // For notifications, magic links
   emailVerified: boolean;
   
-  // Messaging account (primary interaction)
-  messagingPlatform: 'whatsapp' | 'telegram' | 'signal';
-  messagingAccountId: string;       // Platform-specific ID (not phone number)
+  // Messaging account (v0: WhatsApp only)
+  messagingPlatform: 'whatsapp';    // Post-v0: 'whatsapp' | 'telegram' | 'signal'
+  messagingAccountRef: string;      // HMAC(wa_id, secret_pepper) — raw ID never stored in core tables
   messagingVerified: boolean;
   messagingAccountAge?: Date;       // For sybil scoring
   
@@ -572,7 +680,7 @@ interface PolicyCandidate {
   entities: string[];               // Named entities mentioned
   
   // For clustering
-  embedding: number[];              // Vector from multilingual-e5-large
+  embedding: number[];              // Vector from Mistral mistral-embed API
   
   // Quality signals
   confidence: number;               // LLM confidence 0-1
@@ -890,9 +998,9 @@ User visits /dashboard
 | **AI Pipeline** | Python | Best ML ecosystem (transformers, HDBSCAN, scikit-learn) |
 | **Database** | PostgreSQL + pgvector | Mature, embeddings, JSONB |
 | **Website** | Next.js (TypeScript) | SSR, React, good i18n |
-| **Hosting** | Single VPS (Hetzner/DigitalOcean) | Simple, cheap, EU-based for GDPR |
+| **Hosting** | Single VPS (Njalla or 1984.is) | Privacy-first; WHOIS hides owner; see [Frozen Decisions](#v0-frozen-decisions) |
 | **Cloud LLM** | Anthropic Claude or Mistral API | EU/US providers with strong privacy posture |
-| **Embeddings** | multilingual-e5-large (local, CPU) | Stays local for privacy; CPU sufficient at MVP scale |
+| **Embeddings** | Mistral `mistral-embed` API (cloud) | No local model dependency; simplest v0 path; switch to local at scale |
 
 **LLM Strategy**: Cloud-first for MVP. Local GPU infrastructure deferred until critical mass justifies the complexity. See [Section 7.3](#73-why-cloud-first-for-mvp) for rationale and data separation approach.
 
@@ -992,9 +1100,7 @@ collective-will/
 │   ├── channels/                 # Messaging channel integrations
 │   │   ├── __init__.py
 │   │   ├── base.py              # Abstract channel interface
-│   │   ├── whatsapp.py          # Evolution API client
-│   │   ├── telegram.py          # python-telegram-bot wrapper
-│   │   ├── signal.py            # signal-cli wrapper
+│   │   ├── whatsapp.py          # Evolution API client (v0 only channel)
 │   │   └── types.py             # Unified message format
 │   │
 │   ├── handlers/                 # Message handlers
@@ -1106,7 +1212,7 @@ cd web && pnpm dev                 # Website
 **Architecture Summary:**
 
 ```
-Internet → Cloudflare (DNS/CDN) → Hetzner VPS
+Internet → Cloudflare (DNS/CDN) → Njalla/1984.is VPS
                                       │
                     ┌─────────────────┼─────────────────┐
                     │                 │                 │
@@ -1127,29 +1233,30 @@ Internet → Cloudflare (DNS/CDN) → Hetzner VPS
 
 | Component | Specification |
 |-----------|---------------|
-| Provider | **Hetzner Cloud** (EU jurisdiction, privacy-friendly) |
-| Plan | CX32 (4 vCPU, 8GB RAM, 80GB SSD) |
-| Location | Falkenstein or Helsinki (EU) |
+| Provider | **Njalla VPS** or **1984.is** (privacy-first; WHOIS hides owner) |
+| Plan | 4GB+ RAM VPS |
+| Jurisdiction | Sweden (Njalla) or Iceland (1984.is) |
 | OS | Ubuntu 22.04 LTS |
 | Deployment | Docker Compose |
 
-**Why Hetzner over AWS:**
-- **EU jurisdiction** (Germany) — strong privacy laws, no US CLOUD Act
-- **5-10× cheaper** for equivalent specs
-- **Simple pricing** — no surprise bills
+**Why privacy-first hosting (not Hetzner/AWS):**
+- **WHOIS shows registrar, not you** — the key protection for contributor safety
+- **Privacy jurisdiction** (Sweden/Iceland) — requires local legal process to reveal customer
+- **Credit card payment is acceptable** — privacy comes from the provider model, not payment method
 - **Sufficient for MVP** — handles <1000 concurrent users easily
+
+See [Operational Security Guide](operational-security.md) for the full risk-tier framework.
 
 **Monthly Cost Breakdown:**
 
 | Item | Cost |
 |------|------|
-| VPS (Hetzner CX32) | €8.50 (~$9) |
-| Backup storage (100GB) | €3 (~$3) |
+| VPS (Njalla 4GB) | ~€30 (~$32) |
 | LLM API (Anthropic/Mistral) | $5-15 |
-| Domain (amortized) | ~$1 |
+| Domain (Njalla, amortized) | ~$1 |
 | DNS/CDN (Cloudflare) | Free |
 | SSL (Let's Encrypt) | Free |
-| **Total** | **~$20-30/month** |
+| **Total** | **~$40-50/month** |
 
 **Infrastructure Guide covers:**
 - [ ] Server provisioning and SSH setup
@@ -1231,8 +1338,10 @@ See **[Operational Security Guide](operational-security.md)** for implementation
 - **Python ecosystem**: Unified codebase with AI/clustering pipeline
 - **No upstream risk**: Framework changes don't affect us
 
-**Channel-specific choices:**
+**Channel-specific choices (v0: WhatsApp only):**
 - **WhatsApp**: Evolution API (self-hosted gateway) wraps Baileys complexity, exposes clean REST/webhooks
+
+**Post-v0 candidates:**
 - **Telegram**: python-telegram-bot — excellent library, 25k+ stars, well-maintained
 - **Signal**: signal-cli + Python wrapper — the actively maintained option for Signal bots
 
@@ -1267,12 +1376,13 @@ The key concern with cloud LLMs is privacy for users inside Iran whose political
 - User identifiers and account information
 - Submission-to-user mapping
 - Timing metadata that could correlate submissions
-- Raw embeddings (computed locally on CPU)
 
-**What goes to cloud LLM (anonymized):**
-- Submission text only (stripped of all context)
+**What goes to cloud LLM/embedding API (anonymized):**
+- Submission text only (stripped of all context) — for canonicalization and embedding
 - Batched and shuffled to break timing correlation
 - Cluster summaries (aggregated content, not individual voices)
+
+**Note on embeddings**: v0 uses Mistral `mistral-embed` API (cloud) for simplicity. The text sent for embedding is the same anonymized canonicalized text already sent for canonicalization — no additional privacy exposure. Switch to local embeddings (e.g. `multilingual-e5-large`) if privacy requirements escalate at scale.
 
 **Provider selection criteria:**
 | Provider | Jurisdiction | Data Handling | Recommendation |
@@ -1335,10 +1445,12 @@ User submission → Store locally with user_id
 
 Per research: Iranian SIAM system uses phone numbers for surveillance. Platform must not require phone verification.
 
-**What we use instead**:
-- Email verification (magic links)
-- Messaging account linking (account age is signal)
-- Contribution-based trust (approved submissions unlock voting)
+**v0 identity model** (see [Frozen Decisions](#v0-frozen-decisions)):
+- Email magic-link verification
+- WhatsApp account linking (tokenized via HMAC; raw wa_id isolated in sealed mapping service)
+- Account age threshold (48 hours) before submissions
+- Contribution threshold (1+ accepted submission) before voting
+- No OAuth, no vouching, no KYC — these add linkage/governance complexity and exclude high-risk users
 
 ---
 
@@ -1370,28 +1482,32 @@ Per research: Iranian SIAM system uses phone numbers for surveillance. Platform 
 
 | Feature | Notes |
 |---------|-------|
-| WhatsApp submission intake | Primary channel |
-| Email verification | Magic links |
-| Messaging account verification | Account age check |
+| WhatsApp submission intake | Only channel for v0 (via Evolution API) |
+| Email verification | Magic links, no passwords |
+| WhatsApp account linking | Tokenized via HMAC; raw ID isolated |
 | Canonicalization (LLM) | Cloud API (Anthropic/Mistral) with data separation |
 | Clustering (HDBSCAN) | Batch every 6 hours |
-| Approval voting | Via messaging app |
-| Public analytics dashboard | Anyone can view |
-| User dashboard | See own submissions/votes |
-| Evidence store | Hash-chain in Postgres |
+| Approval voting | Via WhatsApp; no action execution |
+| Public analytics dashboard | Anyone can view, no login wall |
+| User dashboard | See own submissions/votes, flag disputes |
+| Evidence store | Hash-chain in Postgres; external anchoring optional |
 | Farsi + English UI | RTL support |
 | Basic audit explorer | For technical users |
+| Abuse controls | Rate limits, burst detection, quarantine (see Frozen Decisions) |
 
 ### Out of Scope (v0)
 
 | Feature | Why Deferred |
 |---------|-------------|
-| Action execution | v0 is about visibility, not action |
-| Telegram intake | Prove end-to-end flow with WhatsApp first; each additional channel multiplies verification complexity, abuse vectors, and maintenance overhead |
+| Action execution / drafting | v0 is about visibility and consensus, not action |
+| Telegram intake | Prove trust loop with WhatsApp first |
 | Signal integration | Lower priority; add if demand |
+| Phone verification | Surveillance risk in Iran context; see Frozen Decisions |
+| OAuth / Google verification | Adds linkage risk; deferred |
+| Vouching / progressive trust | Governance complexity; deferred |
 | Quadratic/conviction voting | Start simple, iterate |
 | Federation/decentralization | Single server sufficient for pilot |
-| Blockchain anchoring | Optional; can add later |
+| Blockchain anchoring (required) | Optional for v0; can require later |
 | Mobile app | Website + messaging app sufficient |
 | AI-generated translations | Start with human review |
 | Demographic collection | Privacy concerns; add carefully later |
@@ -1401,13 +1517,25 @@ Per research: Iranian SIAM system uses phone numbers for surveillance. Platform 
 
 ## 9. Open Questions
 
+### Resolved by Frozen Decisions
+
+The following are now locked. See [v0 Frozen Decisions](#v0-frozen-decisions):
+- Identity/verification model
+- Evidence store implementation and anchoring policy
+- Channel scope (WhatsApp only)
+- Vote eligibility and abuse thresholds
+- Dispute handling process
+- Data retention/deletion policy
+- Pilot success/kill criteria
+- Infrastructure provider choice
+
 ### Must Resolve Before Build
 
-1. **WhatsApp Business API access** — Need approved business account. What's the lead time? Cost? Alternatives if rejected? (Alternative: use Evolution API with Baileys for WhatsApp Web protocol)
+1. ~~**WhatsApp Business API access**~~ — **Resolved.** Use Evolution API (self-hosted) for v0. Migrate to official Business API at v1. See [Frozen Decisions](#v0-frozen-decisions).
 
-2. **Evolution API deployment** — Self-hosted WhatsApp gateway. Docker setup, connection stability, reconnection handling.
+2. **Evolution API deployment** — Self-hosted WhatsApp gateway. Docker setup, connection stability, reconnection handling. (Can resolve during Milestone 1.)
 
-3. **Cluster summary quality** — Need sample data to test. Where do we get realistic Farsi policy submissions for development?
+3. **Cluster summary quality** — Need sample data to test. Where do we get realistic Farsi policy submissions for development? (Can synthesize with LLM for dev/testing.)
 
 ### Can Resolve During Build
 
@@ -1415,15 +1543,13 @@ Per research: Iranian SIAM system uses phone numbers for surveillance. Platform 
 
 5. **Cluster granularity** — Start with `min_cluster_size=5`, tune based on feedback.
 
-6. **Trust scoring weights** — Start simple (account age + contributions), refine with data.
-
 ### Can Resolve After Launch
 
-7. **Optimal clustering frequency** — 6 hours to start; could go to real-time if needed.
+6. **Optimal clustering frequency** — 6 hours to start; could go to real-time if needed.
 
-8. **Translation strategy** — LLM auto-translate vs. human review vs. community edit.
+7. **Translation strategy** — LLM auto-translate vs. human review vs. community edit.
 
-9. **Demographic insights** — If/when/how to collect and display.
+8. **Demographic insights** — If/when/how to collect and display.
 
 ---
 

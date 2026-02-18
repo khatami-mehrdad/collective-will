@@ -8,37 +8,64 @@ Not scale. Not speed. Not feature completeness. Trust.
 
 If users don't believe the pipeline is fair, transparent, and resistant to manipulation, nothing else matters. v0 is built around earning that trust.
 
+**Pilot focus**: Iran — surfacing what Iranians collectively want.
+
 ### What's in v0
 
-- **Issue submission** — users can submit policy concerns in plain text
-- **Agent-based canonicalization and clustering** — AI structures and groups submissions
-- **Daily agenda publication** — a transparent, auditable list of what people care about
-- **Voting** — users vote on which agenda items should trigger action
-- **Action drafting** — the system produces action plans from templates
-- **Explicit consent execution** — nothing sends without the user approving it
-- **Public audit log** — every step is recorded and verifiable
+- **Issue submission via WhatsApp** — users submit policy concerns in plain text (WhatsApp is the only channel for v0)
+- **Agent-based canonicalization and clustering** — AI structures and groups submissions without editorializing
+- **Approval voting** — users vote on which clusters represent shared priorities
+- **Public analytics dashboard** — a transparent, auditable view of what people care about (no login wall)
+- **User dashboard** — see your submissions, their canonical forms, cluster placement, and votes
+- **Evidence store** — append-only hash-chain in PostgreSQL; every step is recorded and verifiable
+- **Dispute mechanism** — users can flag bad canonicalization or cluster assignment
 
 ### What's deliberately excluded from v0
 
-- **Autonomous posting** — no actions fire without human approval
-- **On-chain execution** — blockchain adds complexity before it adds trust at this stage
-- **Global-scale guarantees** — v0 targets a single jurisdiction or community to keep things tractable
-- **Delegated automation** — users can't set-and-forget; every action requires a click
+- **Action drafting and execution** — v0 is about consensus visibility, not action. Deferred to v1.
+- **Telegram and Signal** — prove the trust loop with one channel first
+- **Phone verification, OAuth, vouching** — identity model is email magic-link + WhatsApp linking only
+- **Autonomous posting** — no actions fire, period
+- **On-chain execution / required blockchain anchoring** — optional for v0; adds complexity before it adds trust
+- **Global-scale guarantees** — v0 targets one community (Iran pilot) to keep things tractable
+- **Delegated automation** — no set-and-forget; every interaction is explicit
 
 These are excluded not because they're bad ideas, but because they introduce trust assumptions that v0 hasn't earned yet.
 
-## After v0
+### Pilot gates
 
-The roadmap beyond v0 depends on what v0 reveals. But the broad direction:
+See [MVP Specification — v0 Frozen Decisions](mvp-specification.md#v0-frozen-decisions) for exact 30/60/90-day success and kill criteria.
 
-**v1 — Scale.** Distributed agent execution across independent nodes. Support for multiple concurrent communities or jurisdictions. Delegated consent with strict, user-defined limits.
+## v1 — Action
 
-**v2 — Autonomy.** Protocol-level decentralization. The system operates without any single coordinating entity. Governance of the protocol itself becomes a community function.
+Once the trust loop is proven and pilot gates are passed:
 
-### Open Questions
+- **Action drafting and execution** — map voted items to action templates (email to officials, public submissions), require explicit user consent before sending
+- **Official WhatsApp Business API** — migrate from Evolution API to official Meta API for stability and compliance at scale
+- **Additional channels** — Telegram, then Signal, based on demand
+- **Stronger identity signals** — optional high-trust lane (phone or OAuth), dual tallies (all verified + high-trust subset)
+- **Required external anchoring** — daily Merkle-root export to Witness.co or equivalent
+- **Local embeddings** — migrate from Mistral embed API to local model (e.g. `multilingual-e5-large`) if privacy or cost requires it
+- **Multi-community support** — support multiple concurrent jurisdictions or communities
 
-- What does "legitimacy" look like concretely? What metrics or signals tell you v0 has earned trust?
-- How large should the v0 pilot be? 100 users? 1,000? What's the minimum for meaningful signal?
-- What jurisdiction or community is the right first target?
+## v2 — Autonomy
+
+- **Federation** — distributed agent execution across independent nodes
+- **Protocol-level decentralization** — the system operates without any single coordinating entity
+- **Community governance** — governance of the protocol itself becomes a community function
+- **Delegated consent** — users can set limits and delegate within those limits
+
+### Resolved Questions
+
+The following were open questions and are now locked in [v0 Frozen Decisions](mvp-specification.md#v0-frozen-decisions):
+
+- **What does "legitimacy" look like?** — defined by pilot success metrics (trust ratings, dispute rate, audit usage)
+- **How large should the pilot be?** — 30-day: >=50 users; 60-day: >=100 users; 90-day kill: <100 users
+- **What community?** — Iran (diaspora + inside-Iran)
+- **What's the failure condition?** — explicit kill criteria at 90 days
+
+### Remaining Open Questions
+
 - How do you transition from centralized to decentralized without losing the trust built in v0?
-- What's the failure condition? At what point do you conclude the approach doesn't work?
+- When do additional channels justify the added complexity?
+- At what scale does local LLM infrastructure replace cloud APIs?

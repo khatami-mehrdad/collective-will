@@ -13,8 +13,8 @@ This doc summarizes the current model landscape (February 2026), the hybrid arch
 - **Language strategy:** Farsi is the primary user language; English is the internal processing language. Models are chosen based on Farsi support needs.
 - **Farsi-touching tasks:** Claude Haiku — excellent Farsi comprehension, handles translation + understanding in one step.
 - **English-only reasoning:** DeepSeek V3.2 — cheap, high quality for English, poor Farsi (avoid for user-facing).
-- **Local tier:** Embeddings (BGE-small) + Qwen3-8B for clustering summaries. Run on CPU/low VRAM.
-- **Action plan:** Start with Claude Haiku + DeepSeek V3.2; add local models as volume grows.
+- **Embeddings:** Mistral `mistral-embed` API (cloud) — no local model for v0; switch to local at scale.
+- **Action plan:** Start with Claude Haiku + DeepSeek V3.2 + Mistral embed; add local models as volume grows.
 
 ---
 
@@ -25,8 +25,9 @@ The pipeline has three AI-dependent stages:
 | Agent | Task | Language | Model | Why |
 |-------|------|----------|-------|-----|
 | **Canonicalization** | Freeform Farsi → structured English | Farsi in | Claude Haiku | Excellent Farsi, translation + understanding in one step |
-| **Clustering** | Group similar items, produce summaries | English | Local (BGE embeddings + Qwen3-8B) | High volume, English-only, cost-sensitive |
-| **Action planning** | Map voted items to action templates, draft content | English | DeepSeek V3.2 | Complex reasoning, English-only, cheap |
+| **Embeddings** | Compute vectors for clustering | English | Mistral `mistral-embed` API | Cheap cloud API; no local model dependency for v0 |
+| **Clustering** | Group similar items, produce summaries | English | HDBSCAN (local) + DeepSeek V3.2 (summaries) | HDBSCAN runs locally on vectors; summaries via cheap cloud API |
+| **Action planning** | Map voted items to action templates, draft content | English | DeepSeek V3.2 | Complex reasoning, English-only, cheap (v1 only) |
 | **User messages** | Bot responses, confirmations, vote prompts | Farsi out | Claude Haiku | User-facing Farsi quality matters |
 
 **Key insight:** DeepSeek is ~10x cheaper than Claude but has poor Farsi/RTL support (issues closed as "not planned"). We use Claude only where Farsi quality matters, DeepSeek for English-heavy reasoning.
@@ -95,23 +96,26 @@ Newer models bring algorithm and data advantages at the same size: better reason
 └─────┬─────────────────┬─────────────────┬───────────────┘
       │                 │                 │
 ┌─────▼─────┐    ┌──────▼──────┐   ┌──────▼──────┐
-│  FARSI    │    │   LOCAL     │   │  ENGLISH    │
-│  TIER     │    │   TIER      │   │  REASONING  │
+│  FARSI    │    │  EMBEDDING  │   │  ENGLISH    │
+│  TIER     │    │  TIER       │   │  REASONING  │
 │           │    │             │   │             │
-│ • Canon.  │    │ • Embeddings│   │ • Action    │
-│ • User    │    │ • Cluster   │   │   planning  │
-│   messages│    │   summaries │   │ • Complex   │
+│ • Canon.  │    │ • Vectors   │   │ • Cluster   │
+│ • User    │    │   for       │   │   summaries │
+│   messages│    │   clustering│   │ • Complex   │
 │           │    │             │   │   drafts    │
-│ Model:    │    │ Models:     │   │             │
-│ Claude    │    │ BGE-small   │   │ Model:      │
-│ Haiku     │    │ Qwen3-8B    │   │ DeepSeek    │
-│           │    │ (CPU/6GB)   │   │ V3.2        │
+│ Model:    │    │ Model:      │   │             │
+│ Claude    │    │ Mistral     │   │ Model:      │
+│ Haiku     │    │ mistral-    │   │ DeepSeek    │
+│           │    │ embed       │   │ V3.2        │
 └───────────┘    └─────────────┘   └─────────────┘
+                       │
+              (v0: cloud API)
+              (future: local e5/BGE)
 ```
 
-- **Router:** Task-based routing by agent name. Farsi-in or Farsi-out → Claude. English reasoning → DeepSeek. Embeddings/summaries → Local.
-- **Embeddings:** BGE-small-en-v1.5 for clustering similarity; runs on CPU.
-- **Abstraction:** All agents call the same interface (e.g. `complete(prompt, model_tier)`); implementation swaps backend.
+- **Router:** Task-based routing by agent name. Farsi-in or Farsi-out → Claude. Embeddings → Mistral embed. English reasoning/summaries → DeepSeek.
+- **Embeddings:** Mistral `mistral-embed` API for v0. Migration path: switch to local `multilingual-e5-large` or `BGE-small` if privacy or cost requires it.
+- **Abstraction:** All agents call the same interface (e.g. `complete(prompt, model_tier)` / `embed(text)`); implementation swaps backend.
 
 ---
 
@@ -119,17 +123,16 @@ Newer models bring algorithm and data advantages at the same size: better reason
 
 ### Phase 1 — Now (design / pre-MVP)
 
-- Define the **LLM abstraction**: single interface for completion, with parameters for model tier, max tokens, temperature.
-- Document **which agent uses which tier** (canonicalization → local, clustering → local, action planning → cloud by default).
+- Define the **LLM abstraction**: single interface for completion and embedding, with parameters for model tier, max tokens, temperature.
+- Document **which agent uses which tier** (canonicalization → Claude, embeddings → Mistral embed, summaries/reasoning → DeepSeek).
 - Optionally prototype with **RouteLLM** or a simple rule-based router (e.g. by agent name).
 
 ### Phase 2 — MVP (first deploy)
 
 - **Farsi tier:** Claude Haiku for canonicalization (Farsi → structured English) and user-facing messages (Farsi responses).
-- **Embeddings:** BGE-small-en-v1.5 for clustering similarity; runs on CPU.
-- **Local summaries:** Qwen3-8B for cluster summaries (English-only, optional — can use DeepSeek if no GPU).
-- **English reasoning:** DeepSeek V3.2 API for action planning and complex drafts.
-- **Target hardware:** CPU-only is fine for MVP. Add GPU later for local Qwen3 if cost matters at scale.
+- **Embeddings:** Mistral `mistral-embed` API for clustering vectors. No local model dependency.
+- **English reasoning:** DeepSeek V3.2 API for cluster summaries and complex drafts.
+- **Target hardware:** No GPU required for MVP. All AI workloads are cloud API calls. Add local models later if cost or privacy requires it.
 
 ### Phase 3 — After DeepSeek V4 (Feb 2026+)
 
@@ -150,13 +153,14 @@ Newer models bring algorithm and data advantages at the same size: better reason
 | Task | Model | Volume | Cost |
 |------|-------|--------|------|
 | Canonicalization | Claude Haiku | 1k submissions | ~$2 |
-| Clustering embeddings | BGE-small (local) | 1k items | $0 |
-| Cluster summaries | Qwen3-8B (local) or DeepSeek | 50 clusters | ~$0.50 |
-| Action planning | DeepSeek V3.2 | 10 actions | ~$0.50 |
+| Clustering embeddings | Mistral `mistral-embed` | 1k items | ~$0.10 |
+| Cluster summaries | DeepSeek V3.2 | 50 clusters | ~$0.50 |
 | User messages | Claude Haiku | 3k messages | ~$3 |
 | **Total** | | | **~$6/month** |
 
-Compare: ~$50–100/month if using Claude for everything, or ~$150+ if using GPT-4.
+Action planning is deferred to v1 (no cost in v0).
+
+Compare: ~$50-100/month if using Claude for everything, or ~$150+ if using GPT-4.
 
 ---
 

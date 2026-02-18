@@ -49,13 +49,19 @@ Three things changed:
 
 ## Current Status
 
-This is a **design-phase project** transitioning to implementation. The MVP specification is complete.
+This project is **transitioning from design to implementation**. v0 scope is frozen.
 
 **Pilot focus**: Iran — surfacing what Iranians collectively want.
 
-**v0 goal**: Consensus visibility. Make collective preferences visible. Action execution is v1.
+**v0 goal**: Consensus visibility + approval voting. No action execution (deferred to v1).
 
-See **[MVP Specification](docs/mvp-specification.md)** for the full technical design.
+**v0 key constraints**:
+- WhatsApp only (single channel)
+- Email magic-link + WhatsApp account linking (no phone verification, no OAuth)
+- Privacy-first infrastructure (Njalla/1984.is; WHOIS hides owner)
+- Postgres hash-chain evidence store (external anchoring optional)
+
+See **[MVP Specification — v0 Frozen Decisions](docs/mvp-specification.md#v0-frozen-decisions)** for the complete locked scope.
 
 ---
 
@@ -63,11 +69,11 @@ See **[MVP Specification](docs/mvp-specification.md)** for the full technical de
 
 Core documents for understanding and building the MVP.
 
-- **[MVP Specification](docs/mvp-specification.md)** — the complete v0 technical design: architecture, modules, data models, user flows, technology stack, and implementation milestones.
-- **[Roadmap](docs/roadmap.md)** — what v0 includes, what's deliberately excluded and why.
+- **[MVP Specification](docs/mvp-specification.md)** — the complete v0 technical design including **[v0 Frozen Decisions](docs/mvp-specification.md#v0-frozen-decisions)**: architecture, modules, data models, user flows, technology stack, and implementation milestones.
+- **[Roadmap](docs/roadmap.md)** — what v0 includes, what's deliberately excluded and why, pilot gates.
 - **[Agent Design](docs/agents.md)** — how the canonicalization, clustering, and action planning agents work.
 - **[LLM Strategy](docs/llm-strategy.md)** — which LLMs for which tasks, cost estimates, hybrid architecture.
-- **[Infrastructure Guide](docs/infrastructure-guide.md)** — deployment setup, Docker, hosting options.
+- **[Infrastructure Guide](docs/infrastructure-guide.md)** — deployment setup, Docker, privacy-first hosting.
 
 ---
 

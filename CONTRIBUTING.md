@@ -1,6 +1,6 @@
 # Contributing
 
-This project is in the design phase. There is no code to run, no tests to pass, and no build system. The work right now is thinking, writing, and challenging assumptions.
+This project is transitioning from design to implementation. v0 scope is frozen (see [v0 Frozen Decisions](docs/mvp-specification.md#v0-frozen-decisions)). The work right now is building the MVP.
 
 ## What Kind of Help Is Needed
 
@@ -22,5 +22,5 @@ This project is in the design phase. There is no code to run, no tests to pass, 
 
 - **Substance over style.** Don't bikeshed formatting. Focus on whether the ideas are sound.
 - **Steel-man, then critique.** If you disagree with something, show that you understand why it was proposed before arguing against it.
-- **No implementation debates yet.** "Should we use Kafka or Postgres?" is premature. "What properties does the evidence store need?" is the right level of abstraction.
+- **Frozen decisions are frozen.** v0 scope, identity model, channel choice, infrastructure, and evidence store are locked. See [v0 Frozen Decisions](docs/mvp-specification.md#v0-frozen-decisions). To challenge a frozen decision, open an issue explaining why the decision should be revisited.
 - **Open questions are invitations.** Every open question in the docs is explicitly asking for input. Start there if you're not sure where to begin.

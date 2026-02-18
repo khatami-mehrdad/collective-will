@@ -31,20 +31,20 @@ A practical guide for setting up and managing the infrastructure for Collective 
                                        │
                     ┌──────────────────┼──────────────────┐
                     │                  │                  │
-                    ▼                  ▼                  ▼
-               Your Users        WhatsApp API      Telegram API
+                    ▼                  ▼                  │
+               Your Users        WhatsApp API            │
                     │                  │                  │
-                    └──────────────────┼──────────────────┘
-                                       │
-                                       ▼
-                              ┌─────────────────┐
-                              │   Cloudflare    │
-                              │   (DNS + CDN)   │
-                              └────────┬────────┘
-                                       │
-                                       ▼
+                    └──────────────────┘                  │
+                                       │                  │
+                                       ▼                  │
+                              ┌─────────────────┐        │
+                              │   Cloudflare    │        │
+                              │   (DNS + CDN)   │        │
+                              └────────┬────────┘        │
+                                       │                  │
+                                       ▼                  │
 ┌──────────────────────────────────────────────────────────────────┐
-│                     Hetzner VPS (Ubuntu 22.04)                   │
+│                 Njalla/1984.is VPS (Ubuntu 22.04)                │
 │                                                                  │
 │  ┌────────────────────────────────────────────────────────────┐ │
 │  │                      Docker Compose                         │ │
@@ -65,7 +65,7 @@ A practical guide for setting up and managing the infrastructure for Collective 
 │  │       │     /var/lib/postgresql/data (persistent)          │ │
 │  └───────┴────────────────────────────────────────────────────┘ │
 │                                                                  │
-│  /backups → Hetzner Storage Box (off-server)                    │
+│  /backups → Off-server storage (Backblaze B2 or equivalent)      │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
@@ -73,9 +73,9 @@ A practical guide for setting up and managing the infrastructure for Collective 
 
 | Choice | Reason |
 |--------|--------|
-| **Single VPS** | Simple, cheap, sufficient for MVP scale (<1000 users) |
+| **Single VPS** | Simple, sufficient for MVP scale (<1000 users) |
 | **Docker Compose** | Reproducible deployments, easy updates, isolated services |
-| **Hetzner** | EU jurisdiction (privacy), very affordable, reliable |
+| **Njalla/1984.is** | Privacy-first; WHOIS hides owner; required per v0 frozen decisions |
 | **Cloudflare** | Free DDoS protection, hides server IP, fast DNS |
 | **PostgreSQL** | Mature, reliable, supports pgvector for embeddings |
 
@@ -94,16 +94,16 @@ Consider scaling when you hit these limits. Until then, keep it simple.
 
 ### Choosing a Provider
 
-**Use privacy-focused providers (Njalla or 1984.is)**
+**Use privacy-focused providers (Njalla or 1984.is).** This is a v0 frozen decision.
 
 The key protection is that **WHOIS shows the registrar, not you**. This requires using a privacy-focused provider. Credit card payment is fine.
 
-| Provider | WHOIS Shows | Jurisdiction | Credit Card OK? |
-|----------|-------------|--------------|-----------------|
-| **Njalla** | "Njalla, Sweden" | Sweden | ✅ Yes |
-| **1984.is** | Privacy-protected | Iceland | ✅ Yes |
-| Hetzner | Your identity | Germany | ❌ Don't use |
-| Regular registrar | Your name/address | Varies | ❌ Don't use |
+| Provider | WHOIS Shows | Jurisdiction | Credit Card OK? | v0 Status |
+|----------|-------------|--------------|-----------------|-----------|
+| **Njalla** | "Njalla, Sweden" | Sweden | ✅ Yes | **Default** |
+| **1984.is** | Privacy-protected | Iceland | ✅ Yes | **Acceptable** |
+| Hetzner | Your identity | Germany | ❌ Don't use | **Not for this project** |
+| Regular registrar | Your name/address | Varies | ❌ Don't use | **Not for this project** |
 
 **Why NOT Hetzner/DigitalOcean**: They verify your identity and that information is more easily discoverable. The privacy protection comes from the provider's model, not from payment method.
 
@@ -111,23 +111,7 @@ See [Operational Security Guide](operational-security.md) for the full risk fram
 
 ---
 
-### Option A: Hetzner Cloud (Standard)
-
-**Why Hetzner:**
-- EU-based (Germany) — strong privacy laws
-- €4-20/month for capable VPS
-- No US CLOUD Act exposure
-- Excellent uptime and support
-
-**Server size for MVP:**
-
-| Plan | vCPU | RAM | Storage | Monthly | Use Case |
-|------|------|-----|---------|---------|----------|
-| CX22 | 2 | 4 GB | 40 GB | €4.50 | Dev/testing |
-| **CX32** | 4 | 8 GB | 80 GB | €8.50 | **MVP production** |
-| CX42 | 8 | 16 GB | 160 GB | €17 | If needed later |
-
-### Option B: Njalla VPS (Recommended for This Project)
+### Default: Njalla VPS (Required for This Project)
 
 **Why Njalla:**
 - Swedish company, strong privacy laws
@@ -142,7 +126,7 @@ See [Operational Security Guide](operational-security.md) for the full risk fram
 | **4GB** | 2 | 4 GB | 80 GB | €30 |
 | 8GB | 4 | 8 GB | 160 GB | €60 |
 
-More expensive than Hetzner, but provides the privacy protection needed for this project.
+More expensive than standard providers, but provides the privacy protection required for this project.
 
 **Alternative**: 1984.is (Iceland) - similar privacy focus, Icelandic jurisdiction.
 
@@ -173,9 +157,9 @@ More expensive than Hetzner, but provides the privacy protection needed for this
 
 ---
 
-### Step-by-Step: Create Hetzner VPS (Standard - Only If No OpSec Concerns)
+### Hetzner VPS (NOT for this project — reference only)
 
-> **⚠️ Warning**: Hetzner requires real identity verification. Only use this path if you're certain no contributors have family in sensitive countries. For this project, Njalla is recommended.
+> **⚠️ Do not use for Collective Will.** Hetzner requires real identity verification. Per [v0 Frozen Decisions](mvp-specification.md#v0-frozen-decisions), use Njalla or 1984.is. This section is preserved only as reference for other projects or future migration if threat model changes.
 
 1. **Create account**: https://accounts.hetzner.com/signUp
    - ⚠️ Requires real identity for fraud prevention
@@ -409,7 +393,10 @@ services:
       - postgres
     restart: unless-stopped
 
-  # Evolution API (WhatsApp gateway)
+  # Evolution API (WhatsApp gateway — v0)
+  # v0: Self-hosted Evolution API (no Meta approval needed)
+  # v1: Migrate to official WhatsApp Business API when user count exceeds a few hundred
+  #     or when stability/compliance requires it. Only whatsapp.py changes.
   evolution:
     image: atendai/evolution-api:latest
     environment:
@@ -770,7 +757,7 @@ Your database contains:
 | Type | Frequency | Retention | Location |
 |------|-----------|-----------|----------|
 | **Database dump** | Daily | 30 days | Off-server storage |
-| **Full server snapshot** | Weekly | 4 weeks | Hetzner Snapshots |
+| **Full server snapshot** | Weekly | 4 weeks | Provider snapshots (if available) |
 | **Evidence log export** | Daily | Forever | Off-server + local |
 
 ### Set Up Automated Backups
@@ -826,17 +813,7 @@ crontab -e
 
 **3. Copy backups off-server:**
 
-Option A: **Hetzner Storage Box** (~€3/month for 100GB)
-
-```bash
-# In Hetzner Console, create a Storage Box
-# Get connection details
-
-# Add to backup script:
-rsync -avz $BACKUP_DIR/ uXXXXXX@uXXXXXX.your-storagebox.de:backups/
-```
-
-Option B: **Backblaze B2** (~$0.005/GB/month)
+Option A: **Backblaze B2** (~$0.005/GB/month, privacy-compatible)
 
 ```bash
 # Install rclone
@@ -862,13 +839,9 @@ gunzip -c backups/db_20260211_040000.sql.gz | docker compose exec -T postgres ps
 docker compose exec postgres psql -U collective collective_will -c "SELECT COUNT(*) FROM submissions;"
 ```
 
-### Hetzner Snapshots
+### Provider Snapshots
 
-Automatic server snapshots (whole disk backup):
-
-1. In Hetzner Console → Your server → Snapshots
-2. Click "Create Snapshot" (~€0.01/GB/month)
-3. Enable automatic snapshots in Server settings
+If your hosting provider supports automatic server snapshots, enable them as an additional backup layer. Check Njalla/1984.is documentation for snapshot availability.
 
 ---
 
@@ -1067,13 +1040,12 @@ crontab -e
 
 | Item | Provider | Cost |
 |------|----------|------|
-| VPS (CX32: 4 vCPU, 8GB) | Hetzner | €8.50 (~$9) |
-| Storage Box (100GB backups) | Hetzner | €3.00 (~$3) |
+| VPS (4GB plan) | Njalla | ~€30 (~$32) |
 | LLM API | Anthropic/Mistral | $5-15 |
-| Domain | Porkbun/Njalla | ~$1 (yearly÷12) |
+| Domain | Njalla | ~$1 (yearly÷12) |
 | DNS/CDN | Cloudflare | Free |
 | SSL Certificates | Let's Encrypt | Free |
-| **Total** | | **~$20-30/month** |
+| **Total** | | **~$40-50/month** |
 
 ### One-Time Costs
 
@@ -1086,7 +1058,8 @@ crontab -e
 
 | Approach | Monthly Cost |
 |----------|--------------|
-| **This guide (Hetzner + Cloudflare)** | ~$25 |
+| **This guide (Njalla + Cloudflare)** | ~$45 |
+| Hetzner + Cloudflare (no privacy protection) | ~$25 |
 | AWS (comparable specs) | ~$80-150 |
 | Heroku/Railway/Render | ~$50-100 |
 | DigitalOcean | ~$60-80 |
@@ -1152,13 +1125,13 @@ docker compose restart nginx
 2. **Search the error**: Copy exact error message to Google
 3. **DigitalOcean tutorials**: Best documentation for common tasks
 4. **Stack Overflow**: For specific technical questions
-5. **Hetzner Community**: https://community.hetzner.com
+5. **Your hosting provider's support** (Njalla, 1984.is)
 
 ### Emergency Recovery
 
 If everything breaks:
 
-1. **Create new server** from Hetzner snapshot
+1. **Create new VPS** from provider snapshot (if available)
 2. **Or restore manually:**
    ```bash
    # New server setup (follow Section 3)

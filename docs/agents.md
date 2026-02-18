@@ -71,7 +71,9 @@ After canonicalization, the system may have hundreds or thousands of structured 
 
 ---
 
-## Action Planning Agent
+## Action Planning Agent (v1 — not in v0)
+
+> **Note:** Action planning and execution are deferred to v1 per [v0 Frozen Decisions](mvp-specification.md#v0-frozen-decisions). This section documents the design intent for when v1 begins.
 
 **Job:** Given a policy item that won the vote, produce a concrete action plan.
 
@@ -92,12 +94,12 @@ This agent doesn't decide *what* to do — the users already decided that by vot
 
 **Constraints:**
 - Actions use templates, not open-ended generation — the agent selects and fills, not writes
-- No action executes without user consent (in v0, explicit consent; later, delegated consent with limits)
+- No action executes without user consent (explicit consent; later, delegated consent with limits)
 - All action plans are published before execution
 
-### Open Questions
+### Open Questions (for v1)
 
-- What action types should v0 support? Email to representatives is the obvious starting point — what else?
+- What action types should v1 support? Email to representatives is the obvious starting point — what else?
 - How do you template action content without making every message identical (which platforms flag as spam)?
 - Who defines the action templates? Are they part of the protocol, or community-contributed?
 - How do you handle actions that require platform-specific authentication (e.g., posting on behalf of a user)?

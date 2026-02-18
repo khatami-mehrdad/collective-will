@@ -12,11 +12,11 @@ This document summarizes all research conducted to inform MVP definition for Col
 |------|----------|-------------|
 | Pilot Community | [research-iran-pilot-community.md](research-iran-pilot-community.md) | 89% of Iranians support democracy; 81% use VPNs; phone verification is unsafe |
 | Canonicalization | [research-llm-canonicalization-evaluation.md](research-llm-canonicalization-evaluation.md) | Qwen3-8B likely sufficient; need 200+ human-evaluated items; BERTScore + NLI for automation |
-| Clustering | (in agent output) | BERTopic + HDBSCAN recommended; multilingual embeddings; 80%+ of tokens stay local |
+| Clustering | (in agent output) | HDBSCAN recommended; v0 uses Mistral embed API (cloud); local embeddings at scale |
 | Voting Mechanisms | (in agent output) | Approval voting + bridging analysis for v0; Community Notes achieves consensus 11.5% of time |
 | Action Templates | [research-action-types-templates.md](research-action-types-templates.md) | "Draft and copy" model; inside-Iran users vote-only; email to US/EU officials as primary |
 | Identity/Sybil | [research-identity-sybil-resistance.md](research-identity-sybil-resistance.md) | Multi-signal scoring without KYC; phone verification dangerous for Iran; progressive trust |
-| Evidence Store | [research-transparency-log-implementations.md](research-transparency-log-implementations.md) | SQLite + hash chain + Witness.co for v0; migrate to Trillian Tessera at scale |
+| Evidence Store | [research-transparency-log-implementations.md](research-transparency-log-implementations.md) | PostgreSQL append-only hash-chain for v0 (decision updated); external anchoring optional; migrate to Trillian Tessera at scale |
 | Legal/Regulatory | [research-legal-regulatory.md](research-legal-regulatory.md) | OFAC GL D-2 allows serving Iranians; 501(c)(4) structure; Resistbot model for compliance |
 | LLM Costs | [research-llm-cost-analysis.md](research-llm-cost-analysis.md) | $5-15/month API cost realistic; cloud-first for MVP simplicity |
 | Success Metrics | [research-success-metrics-failure-conditions.md](research-success-metrics-failure-conditions.md) | >90% of civic platform users are one-time; 50+ users completing pipeline = minimum viable |
@@ -28,10 +28,9 @@ This document summarizes all research conducted to inform MVP definition for Col
 ### 1. Iran Pilot Design
 
 **Do:**
-- Target diaspora for action execution (safety)
+- Target diaspora for action execution (safety) — action deferred to v1
 - Allow inside-Iran users to submit and vote only
-- Use WhatsApp as primary channel (no VPN required in Iran since Dec 2024)
-- Support Telegram for diaspora and VPN users
+- Use WhatsApp as only channel for v0 (no VPN required in Iran since Dec 2024)
 - Support Farsi + Azerbaijani Turkish + Kurdish
 - Partner with trusted diaspora media (Iran International, BBC Persian)
 
@@ -40,30 +39,30 @@ This document summarizes all research conducted to inform MVP definition for Col
 - Require real identity anywhere
 - Enable traceable actions for inside-Iran users
 - Store IP addresses or device fingerprints
+- Add Telegram/Signal in v0 (prove trust loop with one channel first)
 
 ### 2. Identity Verification (v0)
 
+Per [v0 Frozen Decisions](../mvp-specification.md#v0-frozen-decisions), v0 uses a single identity path:
+
 **For Submissions:**
-- Email verification with disposable blocking
-- 24-hour account age before first submission
-- Basic rate limiting
+- Email magic-link verification + WhatsApp account linking
+- Account age >= 48 hours before first submission
+- Rate limiting (5 submissions/day/account)
 
 **For Voting:**
-- Email verification PLUS one of:
-  - Aged social OAuth (Twitter/GitHub >90 days)
-  - OR 3+ approved contributions
-  - OR vouching from trusted early user
+- Same verification as above + at least 1 accepted submission
 
-**Rationale:** Multiple paths to voting without requiring KYC or phone numbers.
+**Rationale:** One simple path. No OAuth, no vouching, no phone verification. Minimizes linkage risk and governance complexity while providing enough Sybil resistance for pilot scale.
 
 ### 3. AI Pipeline (Cloud-First for MVP)
 
 | Stage | Model | Location | Notes |
 |-------|-------|----------|-------|
-| Canonicalization | Anthropic Claude / Mistral | Cloud | Text-only sent (no user IDs) |
-| Embeddings | multilingual-e5-large | Local (CPU) | Privacy-preserving |
-| Clustering | BERTopic + HDBSCAN | Local | No cloud dependency |
-| Summarization | Anthropic Claude / Mistral | Cloud | Anonymized cluster data |
+| Canonicalization | Claude Haiku | Cloud | Farsi -> structured English; text-only sent (no user IDs) |
+| Embeddings | Mistral `mistral-embed` | Cloud | Anonymized canonicalized text; switch to local at scale |
+| Clustering | HDBSCAN | Local | Runs on returned vectors; no cloud dependency |
+| Summarization | DeepSeek V3.2 | Cloud | Anonymized cluster data |
 
 **Strategy:** Cloud-first for MVP simplicity. GPU infrastructure deferred until ~10K+ submissions/month. Data separation ensures user identity never leaves local infrastructure. See [MVP Specification §7.3](mvp-specification.md#73-why-cloud-first-for-mvp) for details.
 
@@ -89,12 +88,12 @@ This document summarizes all research conducted to inform MVP definition for Col
 
 ### 6. Evidence Store
 
-**v0:** SQLite + hash chain + Witness.co anchoring
-- Zero dependencies, single file
-- External tamper evidence via Ethereum anchoring
+**v0:** PostgreSQL append-only hash-chain table (per [v0 Frozen Decisions](../mvp-specification.md#v0-frozen-decisions))
+- Embedded in the same Postgres instance as core data — simpler operations, unified backups
+- External anchoring (Witness.co / Ethereum) optional for v0 launch
 - Sufficient for communities up to ~100k entries
 
-**v1:** Migrate to Trillian Tessera when scale requires Merkle proofs
+**v1:** Consider migration to Trillian Tessera when scale requires Merkle proofs; require external anchoring
 
 ### 7. Legal Structure
 
@@ -142,13 +141,11 @@ This document summarizes all research conducted to inform MVP definition for Col
 
 | Component | Cost |
 |-----------|------|
-| VPS (Hetzner CX32) | ~$9 |
-| Backup storage | ~$3 |
-| LLM API (Anthropic/Mistral) | $5-15 |
-| Witness.co anchoring | $3-5 |
-| Domain (amortized) | ~$1 |
+| VPS (Njalla 4GB) | ~$32 |
+| LLM API (Claude Haiku + DeepSeek + Mistral embed) | ~$6 |
+| Domain (Njalla, amortized) | ~$1 |
 | DNS/CDN (Cloudflare) | Free |
-| **Total** | **$20-30/month** |
+| **Total** | **~$40-50/month** |
 
 No GPU required for MVP. See [Infrastructure Guide](infrastructure-guide.md) for complete setup.
 
