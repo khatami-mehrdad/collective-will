@@ -1,12 +1,12 @@
-# v0 Collaborator Setup Checklist
+# v0 Pre-Coding Checklist
 
-Use this document to onboard collaborators for v0 implementation.
+Everything that needs to happen before writing code.
 
 Scope reflects current frozen decisions:
 - WhatsApp only (Evolution API) for v0
 - No action execution in v0
 - Cloud embeddings via Mistral `mistral-embed`
-- Privacy-first infra (Njalla/1984.is)
+- Privacy-first infra (Njalla)
 
 ---
 
@@ -17,7 +17,8 @@ Use a dedicated pseudonymous identity for:
 - GitHub account
 - Git commit name/email
 - Project communications
-- Domain/hosting accounts (Njalla/1984.is)
+- Domain/hosting accounts (Njalla)
+- Social media handles
 
 Recommended: dedicated ProtonMail address (example: `pseudo@protonmail.com`).
 
@@ -34,7 +35,26 @@ Important:
 
 ---
 
-## 2) API keys needed before coding
+## 2) Claim project name and handles
+
+Register these before anything is public. Names get squatted fast.
+
+### Domains (register via Njalla)
+- [ ] `collectivewill.org` — primary domain
+- [ ] `collective-will.org` — redirect to primary, prevents confusion
+
+### Social handles
+- [ ] Twitter/X — `@collectivewill` (project) and `@civil_whisper` (builder pseudonym)
+- [ ] Telegram — `@collectivewill` channel/group (if needed for community)
+- [ ] Reddit — `r/collectivewill` (optional, free)
+
+### Code namespaces (claim when publishing, not now)
+- [ ] GitHub org or repo under pseudonymous account
+- [ ] PyPI / npm package names (when code is ready to publish)
+
+---
+
+## 3) API keys needed before coding
 
 Each collaborator who runs the stack locally should have access to:
 - `ANTHROPIC_API_KEY` (canonicalization + user-facing Farsi messages)
@@ -46,7 +66,7 @@ Do not commit keys. Keep them in local `.env` only.
 
 ---
 
-## 3) Local development prerequisites
+## 4) Local development prerequisites
 
 - Python 3.11+
 - Node.js 20+ (website work)
@@ -55,7 +75,7 @@ Do not commit keys. Keep them in local `.env` only.
 
 ---
 
-## 4) Local environment template
+## 5) Local environment template
 
 Create a local `.env` (never commit):
 
@@ -77,7 +97,7 @@ Also ensure `.env` is in `.gitignore`.
 
 ---
 
-## 5) WhatsApp setup for v0
+## 6) WhatsApp setup for v0
 
 v0 uses:
 - Evolution API (self-hosted Docker container)
@@ -89,7 +109,7 @@ v1 migration plan:
 
 ---
 
-## 6) What to set up now vs later
+## 7) What to set up now vs later
 
 ### Set up now (blocks coding)
 - Pseudonymous git identity (for commits and GitHub activity)
@@ -98,14 +118,19 @@ v1 migration plan:
 - Evolution API local container
 
 ### Set up before pilot launch (does not block coding)
-- Domain via Njalla or 1984.is
-- VPS via Njalla or 1984.is
+- Domain via Njalla
+- VPS via Njalla
 - Cloudflare DNS + HTTPS
 - Backup/monitoring hardening
+- Social media presence
+
+### Claim now (doesn't block coding but gets squatted)
+- Domains
+- Social handles (Twitter/X, Telegram)
 
 ---
 
-## 7) Minimum security rules for collaborators
+## 8) Minimum security rules for collaborators
 
 - Never put real names in commits, code comments, or public docs.
 - Never commit secrets (`.env`, private keys, tokens).
@@ -115,11 +140,14 @@ v1 migration plan:
 
 ---
 
-## 8) Ready-to-start checklist
+## 9) Ready-to-start checklist
 
-- [ ] Pseudonymous GitHub + git identity configured
+- [ ] Pseudonymous ProtonMail created
+- [ ] Pseudonymous GitHub account created
+- [ ] Git identity configured (repo-level, not global)
+- [ ] Domains registered (`collectivewill.org`, `collective-will.org`)
+- [ ] Social handles claimed (Twitter/X at minimum)
 - [ ] Required API keys available locally
 - [ ] `.env` created and ignored by git
 - [ ] Docker services run locally (Postgres + Evolution API)
 - [ ] Team aligned on v0 boundaries (no action execution, WhatsApp only)
-
