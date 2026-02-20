@@ -57,9 +57,10 @@ Client-side JavaScript that verifies the hash chain:
 ```typescript
 async function verifyChain(entries: EvidenceEntry[]): Promise<VerificationResult> {
   // For each entry:
-  // 1. Compute SHA-256 of payload
-  // 2. Verify it matches the stored hash
-  // 3. Verify prev_hash matches previous entry's hash
+  // 1. Build canonical entry material: {timestamp,event_type,entity_type,entity_id,payload,prev_hash}
+  // 2. Compute SHA-256 of canonical serialized entry material
+  // 3. Verify it matches the stored hash
+  // 4. Verify prev_hash matches previous entry's hash
   // Return: { valid: boolean, entriesChecked: number, brokenAt?: number }
 }
 ```
@@ -124,7 +125,7 @@ interface VerificationResult {
 - NO login required. The audit trail is public.
 - The payload displayed must NOT contain raw user IDs, emails, or WhatsApp IDs. The backend must strip these before serving. Only tokenized references and non-identifying data.
 - Client-side verification is the key feature. Users must be able to verify the chain WITHOUT trusting the server.
-- Hash computation on client must match the server's computation exactly (same JSON serialization: `sort_keys=True, default=str`).
+- Hash computation on client must match server computation exactly: canonical JSON over full entry material with sorted keys and compact separators.
 - Pagination is required — do not attempt to load the entire chain at once.
 
 ## Tests
@@ -137,8 +138,9 @@ Write tests covering:
 - Search by event type filters correctly
 - `verifyChain()` returns valid=true for a correct chain (construct test data in JS)
 - `verifyChain()` returns valid=false with broken_at when a hash doesn't match
+- `verifyChain()` returns valid=false when metadata is tampered (`event_type`, `entity_type`, `entity_id`, or `timestamp`)
 - `verifyChain()` returns valid=false when prev_hash chain is broken
-- SHA-256 computation matches Python's output (test with known input/output pair)
+- Canonical entry serialization + SHA-256 computation matches Python's output (known parity fixture)
 - Pagination controls work (next/prev page)
 - Page is public (no auth redirect)
 - Renders in Farsi (RTL) and English (LTR)

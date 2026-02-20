@@ -25,6 +25,8 @@ async def run_clustering(
 ) -> list[Cluster]:
 ```
 
+`min_cluster_size` is supplied from cycle/runtime config (not hardcoded in this module).
+
 Steps:
 1. Load all PolicyCandidates that have embeddings
 2. Extract embedding vectors into a numpy array
@@ -55,6 +57,15 @@ Candidates with label `-1` (noise/unclustered) are NOT discarded:
 - They remain as unclustered candidates
 - They may be clustered in a future run as more submissions arrive
 - Log how many candidates were unclustered
+- Expose unclustered candidate counts (and IDs via internal API) so analytics can surface them transparently
+
+### Cold-start guardrail
+
+Use configurable size thresholds by cycle stage:
+- Early pilot / sparse cycles: allow `min_cluster_size=3`
+- Mature cycles (~100+ submissions/cycle): use `min_cluster_size=5`
+
+Persist the chosen value in `clustering_params` for reproducibility.
 
 ### Clustering parameters logging
 
@@ -79,15 +90,19 @@ HDBSCAN is mostly deterministic for the same input, but set `core_dist_n_jobs=1`
 - Do NOT run clustering if there are fewer than `min_cluster_size` candidates total. Return empty list.
 - Store `run_id`, `random_seed`, and `clustering_params` on every cluster for reproducibility.
 - Clustering runs on ALL candidates (not just new ones since last run). The full dataset is re-clustered each cycle.
+- `min_cluster_size` must come from config/cycle policy; do not hardcode a constant in implementation logic.
+- Unclustered/noise candidates must remain queryable for analytics visibility.
 
 ## Tests
 
 Write tests in `tests/test_pipeline/test_cluster.py` covering:
 - Known synthetic embeddings (e.g., 3 tight groups of 5+ vectors each) produce expected number of clusters
 - `min_cluster_size` is respected (no cluster smaller than the threshold)
+- Configured `min_cluster_size=3` works for sparse-cycle test fixtures; `5` works for mature-cycle fixtures
 - Noise points (widely scattered vectors) get label -1
 - Determinism: same input + same seed = same cluster assignments (run twice, compare)
 - Too few candidates (< min_cluster_size total): returns empty list, no error
+- Unclustered candidate count is logged/stored for analytics exposure
 - Each cluster has `run_id`, `random_seed`, `clustering_params` populated
 - Centroid embedding is the mean of member embeddings
 - Evidence logged for each cluster_created

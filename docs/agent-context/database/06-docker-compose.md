@@ -81,6 +81,7 @@ Add a `/health/db` endpoint that calls `check_db_health()` from `src/db/connecti
 Add to `.env.example`:
 ```
 DB_PASSWORD=local_dev_password
+APP_PUBLIC_BASE_URL=https://collectivewill.org
 ```
 
 Ensure `DATABASE_URL` in `.env.example` uses `postgresql+asyncpg://collective:${DB_PASSWORD}@localhost:5432/collective_will` format.
@@ -91,6 +92,8 @@ Ensure `DATABASE_URL` in `.env.example` uses `postgresql+asyncpg://collective:${
 - The backend container must wait for Postgres to be healthy before starting.
 - Do NOT include any secrets in the Dockerfile or docker-compose.yml. All secrets come from `.env`.
 - Do NOT run containers as root. Add a non-root `USER` in the Dockerfile.
+- This compose file is for local dev only. In production, put backend behind a reverse-proxy edge (Cloudflare or OVH), keep origin IP private, and do not expose backend directly on public internet.
+- Maintain an operator failover playbook for standby VPS + DNS cutover.
 
 ## Tests
 

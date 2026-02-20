@@ -5,7 +5,7 @@ Everything that needs to happen before writing code.
 Scope reflects current frozen decisions:
 - WhatsApp only (Evolution API) for v0
 - No action execution in v0
-- Cloud embeddings via Mistral `mistral-embed`
+- Cloud embeddings via quality-first default (`text-embedding-3-large`) with fallback configured
 - Privacy-first infra (Njalla)
 
 ---
@@ -25,7 +25,7 @@ Recommended: dedicated ProtonMail address (example: `pseudo@protonmail.com`).
 ### Non-public service accounts (can be regular identity)
 Use regular accounts for:
 - Anthropic API
-- Mistral API
+- OpenAI API
 - DeepSeek API
 - Dev tooling accounts
 
@@ -57,9 +57,10 @@ Register these before anything is public. Names get squatted fast.
 ## 3) API keys needed before coding
 
 Each collaborator who runs the stack locally should have access to:
-- `ANTHROPIC_API_KEY` (canonicalization + user-facing Farsi messages)
-- `MISTRAL_API_KEY` (embeddings via `mistral-embed`)
-- `DEEPSEEK_API_KEY` (cluster summaries)
+- `ANTHROPIC_API_KEY` (canonicalization / messaging / reasoning tiers)
+- `OPENAI_API_KEY` (embedding default in v0)
+- `DEEPSEEK_API_KEY` (configured fallback path where applicable)
+- `MISTRAL_API_KEY` (optional embedding fallback path)
 - `EVOLUTION_API_KEY` (WhatsApp gateway auth)
 
 Do not commit keys. Keep them in local `.env` only.
@@ -82,8 +83,9 @@ Create a local `.env` (never commit):
 ```bash
 # LLM/API
 ANTHROPIC_API_KEY=
-MISTRAL_API_KEY=
+OPENAI_API_KEY=
 DEEPSEEK_API_KEY=
+MISTRAL_API_KEY=  # Optional fallback provider
 
 # WhatsApp gateway (Evolution API)
 EVOLUTION_API_KEY=
@@ -113,7 +115,7 @@ v1 migration plan:
 
 ### Set up now (blocks coding)
 - Pseudonymous git identity (for commits and GitHub activity)
-- API keys: Anthropic, Mistral, DeepSeek
+- API keys: Anthropic, OpenAI, DeepSeek (Mistral optional fallback)
 - Local dev environment (Python/Node/Docker/uv)
 - Evolution API local container
 

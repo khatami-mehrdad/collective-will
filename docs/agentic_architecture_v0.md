@@ -17,7 +17,7 @@ architecture.
 - Deterministic clustering where feasible
 - Append-only evidence ledger
 - No hidden editorial overrides
-- Human-in-the-loop only via reproducible reruns
+- No per-item human adjudication; autonomous rerun/escalation policies only
 
 ---
 
@@ -98,7 +98,7 @@ Each skill:
 ### 5. `Identity.LinkWhatsAppAccount`
 
 - Link verified user to WhatsApp ID
-- Store only `HMAC(wa_id, pepper)`
+- Store only random opaque account refs in core tables; keep raw `wa_id` only in sealed mapping
 
 ### 6. `Sybil.EnforceEligibility`
 
@@ -159,7 +159,7 @@ Each skill:
 ### 17. `Cluster.RunHDBSCAN`
 
 - Deterministic seed
-- `min_cluster_size=5`
+- Config-backed `min_cluster_size` (pilot can start lower, then graduate)
 
 ### 18. `Cluster.MultiRunVarianceCheck`
 
@@ -203,20 +203,20 @@ Each skill:
 
 - Send reminder at 24h
 
-## G. Dispute and human review skills
+## G. Dispute adjudication skills
 
 ### 28. `Dispute.Open`
 
 - Create dispute record
 
-### 29. `Dispute.ReviewQueue`
+### 29. `Dispute.EscalateByConfidence`
 
-- Operator dashboard queue
+- Route low-confidence disputes through stronger fallback / ensemble policy
 
 ### 30. `Dispute.ResolveByRerun`
 
-- Resolution only through parameter change + pipeline rerun
-- No manual output editing
+- Resolution through scoped rerun + model escalation policy
+- No manual output editing or per-item human override
 
 ## H. Evidence and transparency skills
 
@@ -229,9 +229,10 @@ Each skill:
 
 - Verify integrity
 
-### 33. `Evidence.ExportDailyMerkleRoot` (optional)
+### 33. `Evidence.ExportDailyMerkleRoot` (config-driven publish)
 
-- Export root for external anchoring
+- Compute local daily Merkle root is required
+- External publication is optional by config
 
 ## I. Privacy and deletion skills
 

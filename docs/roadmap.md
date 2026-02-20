@@ -26,7 +26,7 @@ If users don't believe the pipeline is fair, transparent, and resistant to manip
 - **Telegram and Signal** — prove the trust loop with one channel first
 - **Phone verification, OAuth, vouching** — identity model is email magic-link + WhatsApp linking only
 - **Autonomous posting** — no actions fire, period
-- **On-chain execution / required blockchain anchoring** — optional for v0; adds complexity before it adds trust
+- **On-chain execution / required external publication** — local Merkle-root anchoring is already required in v0; mandatory external publication is deferred
 - **Global-scale guarantees** — v0 targets one community (Iran pilot) to keep things tractable
 - **Delegated automation** — no set-and-forget; every interaction is explicit
 
@@ -43,9 +43,9 @@ Once the trust loop is proven and pilot gates are passed:
 - **Action drafting and execution** — map voted items to action templates (email to officials, public submissions), require explicit user consent before sending
 - **Official WhatsApp Business API** — migrate from Evolution API to official Meta API for stability and compliance at scale
 - **Additional channels** — Telegram, then Signal, based on demand
-- **Stronger identity signals** — optional high-trust lane (phone or OAuth), dual tallies (all verified + high-trust subset)
-- **Required external anchoring** — daily Merkle-root export to Witness.co or equivalent
-- **Local embeddings** — migrate from Mistral embed API to local model (e.g. `multilingual-e5-large`) if privacy or cost requires it
+- **Stronger identity signals** — improve risk scoring and anomaly detection without adding mandatory phone/OAuth identity gates
+- **Required external anchoring publication** — make daily root publication mandatory once v0 publication reliability is proven
+- **Embedding tier evolution** — migrate from v0 cloud default to local embeddings if privacy/cost requires it
 - **Multi-community support** — support multiple concurrent jurisdictions or communities
 
 ## v2 — Autonomy

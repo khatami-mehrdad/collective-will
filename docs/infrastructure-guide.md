@@ -362,7 +362,7 @@ services:
     environment:
       - NEXT_PUBLIC_API_URL=http://backend:8000
       - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
-      - NEXTAUTH_URL=https://yourdomain.com
+      - NEXTAUTH_URL=https://collectivewill.org
     depends_on:
       - backend
     restart: unless-stopped
@@ -470,17 +470,17 @@ http {
     # Redirect HTTP to HTTPS
     server {
         listen 80;
-        server_name yourdomain.com www.yourdomain.com;
+        server_name collectivewill.org www.collectivewill.org;
         return 301 https://$server_name$request_uri;
     }
 
     # HTTPS server
     server {
         listen 443 ssl http2;
-        server_name yourdomain.com www.yourdomain.com;
+        server_name collectivewill.org www.collectivewill.org;
 
-        ssl_certificate /etc/letsencrypt/live/yourdomain.com/fullchain.pem;
-        ssl_certificate_key /etc/letsencrypt/live/yourdomain.com/privkey.pem;
+        ssl_certificate /etc/letsencrypt/live/collectivewill.org/fullchain.pem;
+        ssl_certificate_key /etc/letsencrypt/live/collectivewill.org/privkey.pem;
 
         # Security headers
         add_header X-Frame-Options "SAMEORIGIN" always;
@@ -631,14 +631,14 @@ sudo apt install -y certbot
 docker compose stop nginx
 
 # Get certificate (replace with your domain)
-sudo certbot certonly --standalone -d yourdomain.com -d www.yourdomain.com
+sudo certbot certonly --standalone -d collectivewill.org -d www.collectivewill.org
 
 # Certificates are saved to:
-# /etc/letsencrypt/live/yourdomain.com/fullchain.pem
-# /etc/letsencrypt/live/yourdomain.com/privkey.pem
+# /etc/letsencrypt/live/collectivewill.org/fullchain.pem
+# /etc/letsencrypt/live/collectivewill.org/privkey.pem
 
 # Copy to your project (or symlink)
-sudo cp -rL /etc/letsencrypt/live/yourdomain.com ~/collective-will/certs/
+sudo cp -rL /etc/letsencrypt/live/collectivewill.org ~/collective-will/certs/
 sudo chown -R deploy:deploy ~/collective-will/certs/
 
 # Start nginx
@@ -957,7 +957,7 @@ uptime-kuma:
   restart: unless-stopped
 ```
 
-Access at `https://yourdomain.com:3001` (add firewall rule: `sudo ufw allow 3001/tcp`)
+Access at `https://collectivewill.org:3001` (add firewall rule: `sudo ufw allow 3001/tcp`)
 
 **Option 2: Healthchecks.io (hosted, free tier)**
 

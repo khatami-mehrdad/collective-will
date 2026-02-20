@@ -2,10 +2,10 @@
 
 ## Depends on
 - `messaging/01-channel-base-types` (BaseChannel, UnifiedMessage, OutboundMessage)
-- `database/01-project-scaffold` (config with EVOLUTION_API_URL, EVOLUTION_API_KEY, SECRET_PEPPER)
+- `database/01-project-scaffold` (config with EVOLUTION_API_URL, EVOLUTION_API_KEY)
 
 ## Goal
-Implement the WhatsApp channel using Evolution API. This handles sending/receiving WhatsApp messages via the self-hosted Evolution API gateway.
+Implement the WhatsApp channel using Evolution API. This handles sending/receiving WhatsApp messages via the self-hosted Evolution API gateway, but only as a `BaseChannel` adapter so other modules remain channel-agnostic.
 
 ## Files to create
 
@@ -17,10 +17,10 @@ Implement the WhatsApp channel using Evolution API. This handles sending/receivi
 
 ```python
 class WhatsAppChannel(BaseChannel):
-    def __init__(self, api_url: str, api_key: str, secret_pepper: str):
+    def __init__(self, api_url: str, api_key: str, mapping_repo: MappingRepository):
         self.api_url = api_url
         self.api_key = api_key
-        self.secret_pepper = secret_pepper
+        self.mapping_repo = mapping_repo
         self.client = httpx.AsyncClient(
             base_url=api_url,
             headers={"apikey": api_key},
@@ -33,13 +33,15 @@ class WhatsAppChannel(BaseChannel):
 POST to Evolution API endpoint to send a text message.
 - Endpoint: `POST {api_url}/message/sendText/{instance}`
 - Body: `{"number": wa_id, "text": message.text}`
-- The recipient_ref in OutboundMessage is the HMAC token. You need a reverse lookup (or the raw ID from the sealed mapping) to send. For v0, store a mapping service that holds `hmac_ref -> wa_id` in a restricted table.
+- The recipient_ref in OutboundMessage is an opaque account ref. You must reverse-lookup raw `wa_id` from the sealed mapping to send.
 
 ### parse_webhook()
 
 Parse the Evolution API webhook payload into a `UnifiedMessage`:
 - Extract sender phone number from payload
-- Tokenize it: `hmac_ref = hmac.new(secret_pepper.encode(), wa_id.encode(), hashlib.sha256).hexdigest()`
+- Resolve account ref from sealed mapping:
+  - if `wa_id` exists, use existing `account_ref`
+  - otherwise create `account_ref = str(uuid4())`, save `wa_id ↔ account_ref` in sealed mapping
 - Extract message text (handle text messages only; ignore media, reactions, status updates)
 - Return `None` for non-text-message payloads
 
@@ -62,16 +64,21 @@ Example Evolution API webhook payload structure:
 }
 ```
 
-### HMAC tokenization
+### Account reference mapping
 
 ```python
-import hmac, hashlib
+from uuid import uuid4
 
-def tokenize_wa_id(wa_id: str, pepper: str) -> str:
-    return hmac.new(pepper.encode(), wa_id.encode(), hashlib.sha256).hexdigest()
+async def resolve_or_create_account_ref(wa_id: str, mapping_repo: MappingRepository) -> str:
+    existing = await mapping_repo.get_ref_by_wa_id(wa_id)
+    if existing is not None:
+        return existing
+    account_ref = str(uuid4())
+    await mapping_repo.create_mapping(wa_id=wa_id, account_ref=account_ref)
+    return account_ref
 ```
 
-This function must be deterministic — same wa_id + same pepper = same token every time.
+This mapping must be stable over time (same `wa_id` returns the same existing `account_ref`) while keeping refs non-derivable from phone numbers.
 
 ### send_ballot()
 
@@ -94,19 +101,20 @@ Format a voting ballot as a numbered list in Farsi and send via `send_message()`
 
 ## Constraints
 
-- NEVER log or store raw WhatsApp IDs (`wa_id`) in application tables, logs, or error messages. Only the HMAC token.
-- The raw ID mapping (`hmac_ref -> wa_id`) is needed only for sending messages. Keep it in a separate, restricted table or service.
-- Use `hmac` module from stdlib, NOT a custom hash.
+- NEVER log or store raw WhatsApp IDs (`wa_id`) in application tables, logs, or error messages. Only the opaque account ref.
+- The raw ID mapping (`wa_id ↔ account_ref`) is needed only for messaging transport. Keep it in a separate, restricted table or service.
 - Handle Evolution API errors gracefully (connection timeout, 4xx, 5xx). Return `False` from `send_message()` on failure, do not crash.
+- Keep WhatsApp/Evolution-specific payload details isolated to this module; all other layers consume only `UnifiedMessage`, `OutboundMessage`, and `BaseChannel`.
 
 ## Tests
 
 Write tests in `tests/test_channels/test_whatsapp.py` covering:
-- `parse_webhook()` correctly extracts text and tokenized sender from a valid payload
+- `parse_webhook()` correctly extracts text and opaque sender_ref from a valid payload
 - `parse_webhook()` returns None for status update payloads (no message text)
 - `parse_webhook()` returns None for media messages
-- HMAC tokenization is deterministic (same input = same output)
-- HMAC tokenization produces different tokens for different wa_ids
+- `resolve_or_create_account_ref()` returns the existing ref for a known `wa_id`
+- `resolve_or_create_account_ref()` creates a new UUID ref for unseen `wa_id`
+- Different `wa_id` values produce different account refs
 - `send_message()` calls the correct Evolution API endpoint (mock httpx)
 - `send_message()` returns False on HTTP error (mock 500 response)
 - `send_ballot()` formats the ballot correctly with numbered policies in Farsi

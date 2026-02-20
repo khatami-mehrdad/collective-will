@@ -1,6 +1,6 @@
 # LLM Strategy & Model Selection
 
-How we keep the first MVP cheap while staying ready for the latest open-source models. Local small models for easy tasks; cloud or larger local models for hard tasks.
+How v0 keeps model quality and safety high while preserving a clean path to later cost optimization.
 
 This doc summarizes the current model landscape (February 2026), the hybrid architecture, and the action plan for the future.
 
@@ -8,13 +8,14 @@ This doc summarizes the current model landscape (February 2026), the hybrid arch
 
 ## The Short Version
 
-- **Goal:** Minimize cost while handling Farsi well. Use the right model for each task.
+- **Goal:** Prioritize effectiveness and clarity in v0; optimize cost later via config-backed routing.
 - **Architecture:** A single LLM abstraction with task-based routing. No vendor lock-in.
 - **Language strategy:** Farsi is the primary user language; English is the internal processing language. Models are chosen based on Farsi support needs.
-- **Farsi-touching tasks:** Claude Haiku — excellent Farsi comprehension, handles translation + understanding in one step.
-- **English-only reasoning:** DeepSeek V3.2 — cheap, high quality for English, poor Farsi (avoid for user-facing).
-- **Embeddings:** Mistral `mistral-embed` API (cloud) — no local model for v0; switch to local at scale.
-- **Action plan:** Start with Claude Haiku + DeepSeek V3.2 + Mistral embed; add local models as volume grows.
+- **Canonicalization and Farsi messages:** Sonnet primary with mandatory fallback paths.
+- **English reasoning and summaries:** Sonnet primary with fallback to DeepSeek `deepseek-chat`.
+- **Embeddings:** OpenAI `text-embedding-3-large` primary with config-backed fallback (e.g., `mistral-embed`).
+- **Dispute adjudication:** dedicated `dispute_resolution` tier with fallback/ensemble escalation.
+- **Action plan:** Keep all tier->model mapping in config so policy shifts never require caller rewrites.
 
 ---
 
@@ -24,13 +25,13 @@ The pipeline has three AI-dependent stages:
 
 | Agent | Task | Language | Model | Why |
 |-------|------|----------|-------|-----|
-| **Canonicalization** | Freeform Farsi → structured English | Farsi in | Claude Haiku | Excellent Farsi, translation + understanding in one step |
-| **Embeddings** | Compute vectors for clustering | English | Mistral `mistral-embed` API | Cheap cloud API; no local model dependency for v0 |
-| **Clustering** | Group similar items, produce summaries | English | HDBSCAN (local) + DeepSeek V3.2 (summaries) | HDBSCAN runs locally on vectors; summaries via cheap cloud API |
+| **Canonicalization** | Freeform Farsi → structured English | Farsi in | Sonnet (fallback configured) | Quality-first extraction in v0 |
+| **Embeddings** | Compute vectors for clustering | English | OpenAI `text-embedding-3-large` (fallback configured) | Best semantic quality in v0 |
+| **Clustering** | Group similar items, produce summaries | English | HDBSCAN (local) + `english_reasoning` tier | Local clustering with quality-first summaries + fallback |
 | **Action planning** | Map voted items to action templates, draft content | English | DeepSeek V3.2 | Complex reasoning, English-only, cheap (v1 only) |
-| **User messages** | Bot responses, confirmations, vote prompts | Farsi out | Claude Haiku | User-facing Farsi quality matters |
+| **User messages** | Bot responses, confirmations, vote prompts | Farsi out | `farsi_messages` tier (Sonnet default, Haiku fallback) | High clarity with continuity risk management |
 
-**Key insight:** DeepSeek is ~10x cheaper than Claude but has poor Farsi/RTL support (issues closed as "not planned"). We use Claude only where Farsi quality matters, DeepSeek for English-heavy reasoning.
+**Key insight:** v0 chooses quality-first defaults for trust-critical outputs; cost reductions are introduced later through config changes, not architecture rewrites.
 
 ---
 
@@ -104,17 +105,17 @@ Newer models bring algorithm and data advantages at the same size: better reason
 │   messages│    │   clustering│   │ • Complex   │
 │           │    │             │   │   drafts    │
 │ Model:    │    │ Model:      │   │             │
-│ Claude    │    │ Mistral     │   │ Model:      │
-│ Haiku     │    │ mistral-    │   │ DeepSeek    │
-│           │    │ embed       │   │ V3.2        │
+│ Sonnet    │    │ OpenAI      │   │ Model:      │
+│ (+fallback)│   │ text-embed- │   │ Sonnet      │
+│           │    │ 3-large     │   │ (+fallback) │
 └───────────┘    └─────────────┘   └─────────────┘
                        │
               (v0: cloud API)
               (future: local e5/BGE)
 ```
 
-- **Router:** Task-based routing by agent name. Farsi-in or Farsi-out → Claude. Embeddings → Mistral embed. English reasoning/summaries → DeepSeek.
-- **Embeddings:** Mistral `mistral-embed` API for v0. Migration path: switch to local `multilingual-e5-large` or `BGE-small` if privacy or cost requires it.
+- **Router:** Task-tier routing (`canonicalization`, `farsi_messages`, `english_reasoning`, `dispute_resolution`, `embedding`).
+- **Embeddings:** v0 default OpenAI `text-embedding-3-large`, with configurable fallback path.
 - **Abstraction:** All agents call the same interface (e.g. `complete(prompt, model_tier)` / `embed(text)`); implementation swaps backend.
 
 ---
@@ -124,14 +125,16 @@ Newer models bring algorithm and data advantages at the same size: better reason
 ### Phase 1 — Now (design / pre-MVP)
 
 - Define the **LLM abstraction**: single interface for completion and embedding, with parameters for model tier, max tokens, temperature.
-- Document **which agent uses which tier** (canonicalization → Claude, embeddings → Mistral embed, summaries/reasoning → DeepSeek).
+- Document **which agent uses which tier**, with model/provider IDs sourced only from config.
 - Optionally prototype with **RouteLLM** or a simple rule-based router (e.g. by agent name).
 
 ### Phase 2 — MVP (first deploy)
 
-- **Farsi tier:** Claude Haiku for canonicalization (Farsi → structured English) and user-facing messages (Farsi responses).
-- **Embeddings:** Mistral `mistral-embed` API for clustering vectors. No local model dependency.
-- **English reasoning:** DeepSeek V3.2 API for cluster summaries and complex drafts.
+- **Canonicalization tier:** Sonnet primary + configured fallback.
+- **Farsi messaging tier:** Sonnet primary + configured fallback.
+- **English reasoning tier:** Sonnet primary + configured fallback.
+- **Embedding tier:** OpenAI `text-embedding-3-large` primary + configured fallback.
+- **Dispute-resolution tier:** dedicated primary model + fallback/ensemble escalation.
 - **Target hardware:** No GPU required for MVP. All AI workloads are cloud API calls. Add local models later if cost or privacy requires it.
 
 ### Phase 3 — After DeepSeek V4 (Feb 2026+)
@@ -152,15 +155,15 @@ Newer models bring algorithm and data advantages at the same size: better reason
 
 | Task | Model | Volume | Cost |
 |------|-------|--------|------|
-| Canonicalization | Claude Haiku | 1k submissions | ~$2 |
-| Clustering embeddings | Mistral `mistral-embed` | 1k items | ~$0.10 |
-| Cluster summaries | DeepSeek V3.2 | 50 clusters | ~$0.50 |
-| User messages | Claude Haiku | 3k messages | ~$3 |
-| **Total** | | | **~$6/month** |
+| Canonicalization | Sonnet primary | 1k submissions | Higher than cost-first |
+| Clustering embeddings | OpenAI `text-embedding-3-large` primary | 1k items | Higher than cost-first |
+| Cluster summaries | Sonnet primary + fallback | 50 clusters | Higher than cost-first |
+| User messages | Sonnet primary + Haiku fallback | 3k messages | Higher than cost-first |
+| **Total** | | | **Quality-first v0 budget; optimize later via config** |
 
 Action planning is deferred to v1 (no cost in v0).
 
-Compare: ~$50-100/month if using Claude for everything, or ~$150+ if using GPT-4.
+Compare cost phases through config updates after scale is reached; avoid business-logic rewrites when changing model economics.
 
 ---
 

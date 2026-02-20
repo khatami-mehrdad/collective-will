@@ -2,7 +2,7 @@
 
 ## Depends on
 - `messaging/03-webhook-endpoint` (FastAPI app and routes)
-- `messaging/02-whatsapp-evolution-client` (HMAC tokenization)
+- `messaging/02-whatsapp-evolution-client` (opaque account ref mapping)
 - `database/03-core-models` (User model, CRUD queries)
 - `database/04-evidence-store` (append_evidence)
 
@@ -24,12 +24,17 @@ Input: `{"email": "user@example.com"}`
 Steps:
 1. Validate email format
 2. Check if email already registered. If so, send a new magic link (re-verify flow).
-3. Check domain rate limit: max 3 accounts per email domain per day
-4. Generate magic-link token using `secrets.token_urlsafe(32)`
-5. Store token with expiry (15 minutes) — can use a `verification_tokens` table or store on user record
-6. Send email with magic link: `https://yourdomain.com/verify?token={token}`
-7. If user doesn't exist yet, create User record with `email_verified=False`
-8. Return `{"status": "magic_link_sent"}`
+3. Check per-IP signup cap: block if requester IP exceeded `MAX_SIGNUPS_PER_IP_PER_DAY` in last 24h
+4. Determine if domain is major provider (`MAJOR_EMAIL_PROVIDERS`)
+5. If domain is non-major, enforce domain cap `MAX_SIGNUPS_PER_DOMAIN_PER_DAY` (default 3/day)
+6. Track signup anomaly telemetry: count distinct email domains requested from the same requester IP in the last 24h; if anomalous, flag for review/monitoring
+7. Detect disposable-email domains and record as a negative `trust_score` signal (soft signal only, do not auto-reject by itself)
+8. Generate magic-link token using `secrets.token_urlsafe(32)`
+9. Store token with expiry (15 minutes) — can use a `verification_tokens` table or store on user record
+10. Send email with magic link: `{settings.app_public_base_url}/verify?token={token}` (production: `https://collectivewill.org`)
+11. If user doesn't exist yet, create User record with `email_verified=False`
+12. Log account-creation velocity metrics (per IP, per domain, global) for abuse monitoring dashboards
+13. Return `{"status": "magic_link_sent"}`
 
 For v0, email sending can be a stub (log the link) — actual email integration is an infrastructure concern.
 
@@ -58,13 +63,13 @@ When a verified user sends their first WhatsApp message to the bot:
 ```python
 async def link_whatsapp_account(
     user: User,
-    wa_hmac_ref: str,
+    account_ref: str,
     db: AsyncSession,
 ) -> None:
 ```
 
-1. Check that no other user is already linked to this `wa_hmac_ref`
-2. Set `user.messaging_account_ref = wa_hmac_ref`
+1. Check that no other user is already linked to this `account_ref`
+2. Set `user.messaging_account_ref = account_ref`
 3. Set `user.messaging_verified = True`
 4. Set `user.messaging_account_age` to current time (or WhatsApp account creation time if available)
 5. Log `user_verified` event (type: `whatsapp_linked`) to evidence store
@@ -81,10 +86,14 @@ The linking flow requires the user to send a linking code (provided on the websi
 ## Constraints
 
 - Use `secrets` module for all token generation. NEVER use `random`.
-- Do NOT store raw WhatsApp IDs. Only HMAC tokens.
+- Do NOT store raw WhatsApp IDs. Store only opaque account refs in core tables.
 - Magic link tokens must expire (15 minutes). Linking codes must expire (1 hour).
 - Generic error responses — do not reveal whether an email is registered.
 - Email sending is a stub for now (print/log the link). Do not add email service dependencies.
+- Build absolute links using `APP_PUBLIC_BASE_URL`; do not hardcode hostnames in auth flows.
+- Disposable-email detection is a soft trust signal in v0, not a hard rejection rule.
+- Per-IP signup cap is a hard block for abuse control in v0.
+- Domain cap applies only to non-major domains; major providers are exempt.
 
 ## Tests
 
@@ -92,7 +101,11 @@ Write tests in `tests/test_handlers/test_identity.py` and `tests/test_api/test_a
 - `POST /api/auth/subscribe` with valid email returns 200
 - `POST /api/auth/subscribe` with invalid email returns 422
 - `POST /api/auth/subscribe` creates user with `email_verified=False`
-- Domain rate limit: 4th account on same domain blocked
+- Domain rate limit: 4th account on non-major domain blocked
+- Major provider exemption: 4th signup on major domain is not blocked by domain cap
+- Per-IP signup cap: request over configured cap returns rate-limit response
+- Signup anomaly telemetry: high distinct-domain count from one IP gets flagged (without blocking)
+- Disposable-email domain updates `trust_score` signal and still returns success path in v0
 - `GET /api/auth/verify` with valid token sets `email_verified=True`
 - `GET /api/auth/verify` with expired token returns 400
 - `GET /api/auth/verify` with invalid token returns 400
@@ -100,5 +113,6 @@ Write tests in `tests/test_handlers/test_identity.py` and `tests/test_api/test_a
 - WhatsApp linking: valid linking code sets `messaging_verified=True`
 - WhatsApp linking: expired code rejected
 - WhatsApp linking: code already used rejected
-- WhatsApp linking stores HMAC ref, not raw ID
+- WhatsApp linking stores opaque account ref, not raw ID
 - Evidence logged for both email verification and WhatsApp linking
+- Account-creation velocity metrics are emitted on subscribe attempts

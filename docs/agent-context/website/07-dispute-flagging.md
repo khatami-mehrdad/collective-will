@@ -4,7 +4,7 @@
 - `website/06-dashboard-submissions-votes` (submission and cluster views in dashboard)
 
 ## Goal
-Add the ability for users to flag bad canonicalization or incorrect cluster assignment from their dashboard. Disputes are logged and reviewed by operators.
+Add the ability for users to flag bad canonicalization or incorrect cluster assignment from their dashboard. Disputes are logged and resolved by an autonomous dispute workflow (no per-item human review).
 
 ## Files to create/modify
 
@@ -50,8 +50,8 @@ interface DisputeStatusProps {
 ```
 
 Display:
-- `dispute_open`: "🔍 در حال بررسی" / "Under review" (yellow badge)
-- `dispute_resolved`: "✓ بررسی شد" / "Reviewed" (green badge) + resolution text if available
+- `dispute_open`: "🔍 در حال بررسی خودکار" / "Under automated review" (yellow badge)
+- `dispute_resolved`: "✓ بررسی شد" / "Resolved" (green badge) + resolution text if available
 - `null`: No dispute — show the DisputeButton
 
 ### Integration with SubmissionCard
@@ -75,9 +75,14 @@ export async function flagDispute(data: {
 ### Dispute rules (from frozen decisions)
 
 - Disputed items are tagged but NEVER removed or suppressed
-- Operator reviews within 72 hours
-- Resolution is by re-running the pipeline or adjusting parameters, NOT by manual content override
+- Autonomous dispute workflow resolves within 72 hours (SLA target)
+- Resolver policy must use explicit confidence thresholds; low-confidence outcomes escalate through fallback/ensemble path
+- Resolution uses `tier="dispute_resolution"` with fallback/ensemble escalation when confidence is low; no human case-by-case decisions
+- Dispute scope is submission-first: re-canonicalize the disputed item; do not trigger full mid-cycle re-clustering for a single dispute
+- Resolution is by re-running pipeline steps (or model escalation/ensemble), NOT by manual content override
 - Resolution is logged to the evidence store
+- Every adjudication step (`dispute_open`, escalation path, `dispute_resolved`) must be evidence-logged
+- Track dispute-volume and resolver-disagreement metrics; if disputes exceed 5% of cycle submissions (or disagreement spikes), trigger model/prompt/policy tuning
 
 ## Constraints
 
@@ -86,6 +91,8 @@ export async function flagDispute(data: {
 - A submission can only have one open dispute at a time.
 - Dispute submission is rate-limited (inherit from general rate limits).
 - The dispute reason is optional — users should be able to flag without explaining (lower friction).
+- Humans do not manually resolve single disputes; humans may only tune global policies/models and risk controls.
+- Confidence-threshold values are config-driven; do not hardcode thresholds in UI handlers.
 
 ## Tests
 
@@ -93,9 +100,12 @@ Write tests covering:
 - DisputeButton renders and is clickable
 - Clicking opens the dispute form
 - Form submits to API with correct payload (mock fetch)
-- Success state: button replaced by DisputeStatus showing "under review"
+- Success state: button replaced by DisputeStatus showing "under automated review"
 - Error state: error message shown, form still available
 - Already-disputed item shows DisputeStatus instead of button
 - Resolved dispute shows resolution status
 - DisputeButton disabled when already disputed
 - Form works in Farsi (RTL) and English (LTR)
+- Single-dispute path re-canonicalizes disputed submission only (no full mid-cycle re-cluster side effect)
+- Metrics pipeline emits dispute-rate and resolver-disagreement signals for tuning thresholds
+- Evidence log contains full adjudication trace (open -> optional escalation(s) -> resolved) for each dispute

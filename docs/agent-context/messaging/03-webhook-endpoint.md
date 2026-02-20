@@ -6,7 +6,7 @@
 - `database/06-docker-compose` (FastAPI app exists at src/api/main.py)
 
 ## Goal
-Create the FastAPI webhook route that receives Evolution API callbacks, validates them, and routes to the appropriate handler.
+Create the FastAPI webhook route that receives Evolution API callbacks, validates them, and routes to the appropriate handler. Keep WhatsApp specifics at the edge and hand off a normalized `UnifiedMessage` to channel-agnostic routing logic.
 
 ## Files to create/modify
 
@@ -61,7 +61,8 @@ Use FastAPI `BackgroundTasks` to run `route_message` without blocking the webhoo
 
 - The webhook must return 200 within a few seconds. Do NOT do heavy processing synchronously.
 - Do NOT expose internal error details in the response body.
-- Log the raw payload for debugging, but strip any raw wa_id before logging (log only the HMAC token).
+- Log the raw payload for debugging, but strip any raw wa_id before logging (log only the opaque account ref).
+- Keep Evolution-specific parsing in `WhatsAppChannel.parse_webhook()`; downstream routing should operate on `UnifiedMessage`, not provider payload shape.
 
 ## Tests
 

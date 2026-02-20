@@ -4,7 +4,7 @@
 - `database/03-core-models` (Submission model)
 
 ## Goal
-Implement the privacy boundary that prepares submission text for cloud LLM processing — stripping all identifiers and shuffling to prevent timing correlation.
+Implement the privacy boundary that prepares submission text for cloud LLM processing — stripping identifiers, redacting residual PII, and shuffling to prevent timing correlation.
 
 ## Files to create
 
@@ -29,9 +29,10 @@ def prepare_batch_for_llm(
 
 Steps:
 1. Extract only `raw_text` from each submission. Discard `user_id`, `created_at`, `id`, and all other metadata.
-2. Shuffle the list using `secrets.SystemRandom().shuffle()` (cryptographically secure shuffle).
-3. Build an index map so results can be re-linked to submissions after LLM processing.
-4. Return the shuffled texts and the index map.
+2. Apply residual PII redaction on text content (emails, phone numbers, national IDs, exact addresses where detectable).
+3. Shuffle the list using `secrets.SystemRandom().shuffle()` (cryptographically secure shuffle).
+4. Build an index map so results can be re-linked to submissions after LLM processing.
+5. Return the shuffled texts and the index map.
 
 ### validate_no_metadata()
 
@@ -47,9 +48,9 @@ Scan each text for patterns that look like:
 - UUIDs (regex for UUID format)
 - Email addresses
 - Phone numbers (basic pattern)
-- HMAC hex strings (64-char hex)
+- Account reference token patterns (if any app-specific prefix/pattern is used)
 
-This is a safety net, not a guarantee. The primary protection is that we only extract `raw_text`.
+This is a safety net, not a guarantee. Primary protection is layered: intake PII gate (reject + resend prompt for high-risk content) plus this residual redaction pass before LLM.
 
 ### re_link_results()
 
@@ -67,6 +68,7 @@ def re_link_results(
 - The shuffle must use a cryptographically secure random source (`secrets`), not `random.shuffle()`.
 - The index map is the ONLY way to re-link results. It must be kept in memory only during processing, never persisted with the batch.
 - This module is a hard privacy boundary. If in doubt, strip more rather than less.
+- If residual PII cannot be safely redacted, mark for reject-and-resend workflow instead of forwarding text downstream.
 
 ## Tests
 
@@ -78,5 +80,7 @@ Write tests in `tests/test_pipeline/test_privacy.py` covering:
 - `validate_no_metadata()` returns True for clean text
 - `validate_no_metadata()` returns False when text accidentally contains a UUID
 - `validate_no_metadata()` returns False when text contains an email address
+- Residual PII redaction masks detected PII before LLM batch output
+- Unredactable high-risk PII path triggers reject-and-resend signal (no downstream forwarding)
 - Empty input list handled gracefully (returns empty list and empty map)
 - Single-item list works correctly

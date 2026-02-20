@@ -5,7 +5,7 @@
 - `database/03-core-models` (PolicyCandidate model with pgvector column)
 
 ## Goal
-Compute semantic embeddings for PolicyCandidates via Mistral embed API and store them in the pgvector column.
+Compute semantic embeddings for PolicyCandidates via the configured embedding model (quality-first in v0) and store them in the pgvector column.
 
 ## Files to create
 
@@ -32,7 +32,7 @@ Steps:
 
 ### Batch handling
 
-- Mistral embed API has a batch limit (check current docs, typically ~32 or 64 texts per request)
+- Embedding providers have batch limits; use the limit for the currently selected provider/model
 - Split large candidate lists into sub-batches
 - Process sub-batches sequentially to respect rate limits
 
@@ -48,24 +48,26 @@ def prepare_text_for_embedding(candidate: PolicyCandidate) -> str:
 
 ### Retry logic
 
-- If Mistral API returns an error for a batch, retry that batch (up to 3 times)
+- If the primary embedding provider returns an error for a batch, retry that batch (up to 3 times)
+- If retries fail and `embedding_fallback_model` is configured, retry the batch once via fallback model/provider
 - If a batch permanently fails, log the error and skip those candidates (don't block the rest)
 - Failed candidates should be retried on the next pipeline run
 
 ## Constraints
 
 - Only embed the canonicalized English text, NOT the raw Farsi submission. The raw text should never leave the local system.
-- Embeddings are stored in the pgvector column on policy_candidates. Use the correct vector dimension for `mistral-embed` (1024 dimensions).
+- Embeddings are stored in the pgvector column on policy_candidates. Vector dimension must match the active embedding model; do not hardcode model-specific dimensions in this module.
 - Do not re-compute embeddings for candidates that already have them.
 
 ## Tests
 
 Write tests in `tests/test_pipeline/test_embeddings.py` covering:
-- Candidates without embeddings get embeddings computed and stored (mock Mistral API returning 1024-dim vectors)
+- Candidates without embeddings get embeddings computed and stored (mock primary embedding API)
 - Candidates with existing embeddings are skipped
 - Batch splitting: 100 candidates correctly split into sub-batches
-- Stored embedding dimension matches expected (1024)
+- Stored embedding dimension matches the configured model expectation
 - Embedding can be retrieved from database and has correct length
 - API error on one batch doesn't block processing of other batches
+- Primary embedding failure triggers fallback model when configured
 - Empty candidate list handled gracefully (returns 0)
 - `prepare_text_for_embedding()` combines title and summary correctly

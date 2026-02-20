@@ -21,36 +21,45 @@ These are locked. Do not deviate.
 | Decision | Rule |
 |----------|------|
 | **Scope** | Consensus visibility + approval voting only. No action drafting or execution. |
-| **Channel** | WhatsApp only (via Evolution API, self-hosted). No Telegram, no Signal. |
-| **Canonicalization model** | Claude Haiku (Farsi → structured English) |
-| **Embeddings** | Mistral `mistral-embed` API (cloud) |
-| **Cluster summaries** | DeepSeek V3.2 API |
-| **User-facing messages** | Claude Haiku (Farsi quality) |
-| **Clustering** | HDBSCAN (runs locally), `min_cluster_size=5` |
-| **Identity** | Email magic-link + WhatsApp account linking. No phone verification, no OAuth, no vouching. |
-| **WhatsApp ID storage** | Tokenized via `HMAC(wa_id, SECRET_PEPPER)`. Raw IDs isolated in sealed mapping, stripped from logs/exports. |
-| **Submission eligibility** | Verified account + account age >= 48 hours |
-| **Vote eligibility** | Verified account + age >= 48h + at least 1 accepted submission |
+| **Channel** | WhatsApp only (via Evolution API, self-hosted). No Telegram, no Signal in v0. Messaging architecture must stay channel-agnostic (`BaseChannel` boundary): keep provider-specific parsing in channel adapters and test with a mock/fake channel so adding a second channel in v1 is a one-module addition. |
+| **Canonicalization model** | Claude Sonnet (Farsi → structured English) |
+| **LLM routing abstraction** | Model/provider resolution is centralized in `pipeline/llm.py` via config-backed task tiers. No direct model IDs in other modules. |
+| **Embeddings** | Quality-first in v0: OpenAI `text-embedding-3-large` (cloud). Later versions may switch to cost-effective embedding models via the LLM abstraction config without business-logic changes. |
+| **Cluster summaries** | Quality-first in v0: `english_reasoning` tier defaults to Claude Sonnet. Mandatory fallback is required for risk management (default fallback: DeepSeek `deepseek-chat`) via abstraction config. |
+| **User-facing messages** | Quality-first in v0: `farsi_messages` tier defaults to Claude Sonnet. Mandatory fallback is required for risk management (default fallback: Claude Haiku) via abstraction config. |
+| **Clustering** | HDBSCAN (runs locally), with config-backed `min_cluster_size` per cycle (early pilot starts at `3`, graduate to `5` once submissions/cycle exceed ~100). Unclustered items (noise) must be visible in analytics and never silently discarded. |
+| **Identity** | Email magic-link + WhatsApp account linking. No phone verification, no OAuth, no vouching. Signup controls: exempt major email providers from per-domain cap; enforce `MAX_SIGNUPS_PER_DOMAIN_PER_DAY=3` for non-major domains; enforce per-IP signup cap (`MAX_SIGNUPS_PER_IP_PER_DAY`) and keep telemetry signals (domain diversity, disposable-domain scoring, velocity logs). |
+| **WhatsApp ID storage** | Store WhatsApp linkage as random opaque account refs (UUIDv4). Raw IDs live only in a sealed mapping (`wa_id ↔ account_ref`) and are stripped from logs/exports. |
+| **Submission eligibility** | Verified account + account age >= 48 hours in production. Threshold is config-backed via `MIN_ACCOUNT_AGE_HOURS` (default `48`) so test/dev can override lower values. |
+| **Vote eligibility** | Verified account + age >= 48h + at least 1 accepted contribution in production. Accepted contribution = processed submission OR pre-ballot policy endorsement signature. Use the same config-backed age threshold (`MIN_ACCOUNT_AGE_HOURS`, default `48`) for test/dev overrides. |
+| **Pre-ballot signatures** | Multi-stage approval is required before ballot: clusters must pass size threshold and collect enough distinct endorsement signatures (`MIN_PREBALLOT_ENDORSEMENTS`, default `5`) before entering final approval ballot. |
+| **Adjudication autonomy** | Individual votes, disputes, and quarantine outcomes are resolved by autonomous agentic workflows (primary model + fallback/ensemble as needed). Humans do not manually decide per-item outcomes; human actions are limited to architecture, policy tuning, and risk-management incidents. |
 | **Evidence store** | PostgreSQL append-only hash-chain. No UPDATE/DELETE. |
-| **External anchoring** | Optional for v0 (Witness.co daily Merkle root) |
-| **Infrastructure** | Njalla/1984.is VPS. Privacy-first. WHOIS hides owner. |
+| **External anchoring** | Merkle root computation is required in v0 (daily). Publishing that root to Witness.co is optional and config-driven. |
+| **Infrastructure** | Njalla domain is registered (WHOIS privacy). Primary hosting is 1984.is VPS. Production traffic must pass through a reverse-proxy edge (Cloudflare or OVH DDoS) with origin IP kept private, and an operator failover playbook + standby VPS must be documented. |
 
 ### Abuse Thresholds
 
 | Control | Limit |
 |---------|-------|
 | Submissions per account per day | 5 |
-| Accounts per email domain per day | 3 |
-| Burst quarantine trigger | 10+ submissions/hour from one account |
-| Vote changes per cycle | 1 |
+| Accounts per email domain per day | 3 (non-major domains only; major providers exempt) |
+| Signups per requester IP per day | 10 |
+| Burst quarantine trigger | 3 submissions/5 minutes from one account (soft quarantine: accept + flag for review) |
+| Vote changes per cycle | 1 full vote re-submission per cycle (total max: 2 vote submissions/cycle). |
 | Failed verification attempts | 5 per email per 24h, then 24h lockout |
 
 ### Dispute Handling
 
 - Users flag bad canonicalization or cluster assignment from their dashboard.
-- Operator reviews within 72 hours.
+- Autonomous dispute-resolution workflow completes within 72 hours (SLA target).
+- Resolver can escalate to a stronger model or multi-model ensemble when confidence is low.
+- Dispute adjudication must use explicit confidence thresholds with fallback/ensemble paths when below threshold.
+- Scope dispute resolution to the disputed submission first (re-canonicalize that item); do not re-run full clustering mid-cycle for a single dispute.
 - Disputed items tagged (`dispute_open`, `dispute_resolved`) but never removed or suppressed.
 - Resolution logged to evidence store. Resolution is by re-running pipeline, not manual content override.
+- Every adjudication action (primary decision, fallback/ensemble escalation, final resolution) must be evidence-logged.
+- Track dispute volume and resolver-disagreement metrics; if disputes exceed 5% of cycle submissions (or disagreement spikes), tune model/prompt/policy.
 
 ### Data Retention
 
@@ -58,15 +67,19 @@ These are locked. Do not deviate.
 |------|---------------------------|
 | Evidence chain entries | No (chain integrity) |
 | Account linkage (email ↔ wa_id mapping) | Yes (GDPR) |
-| Tokenized user refs in evidence chain | No (but unlinkable after account deletion) |
+| Opaque user refs in evidence chain | No (but unlinkable after account deletion) |
 | Raw submissions in evidence chain | No (user link severed; text preserved anonymously) |
 | Votes | No (pseudonymous; user link severed on deletion) |
+
+PII safety rule: run automated pre-persist PII detection on incoming submissions. If high-risk PII is detected, do not store the text; ask the user to redact personal identifiers and resend. Keep pipeline PII stripping as a secondary safety layer.
 
 ---
 
 ## Data Models
 
 Implement as Pydantic `BaseModel` subclasses (Python) and SQLAlchemy ORM models for DB.
+
+Model conversion rule: define explicit ORM<->schema conversion methods (for example, `User.from_orm()` / `db_user.to_schema()`), and test round-trip field parity. Avoid ad-hoc dict mapping between ORM and Pydantic layers.
 
 ### User
 
@@ -75,14 +88,14 @@ id: UUID
 email: str
 email_verified: bool
 messaging_platform: "whatsapp"
-messaging_account_ref: str          # HMAC(wa_id, SECRET_PEPPER)
+messaging_account_ref: str          # Random opaque account ref (UUIDv4), never raw wa_id
 messaging_verified: bool
 messaging_account_age: datetime | None
 created_at: datetime
 last_active_at: datetime
 locale: "fa" | "en"
-trust_score: float
-contribution_count: int
+trust_score: float                     # Reserved for v1-style risk scoring unless an explicit v0 policy uses it
+contribution_count: int              # processed submissions + recorded policy endorsements
 is_anonymous: bool
 ```
 
@@ -110,7 +123,7 @@ title_en: str | None
 domain: PolicyDomain
 summary: str                        # 1-3 sentences
 summary_en: str | None
-stance: "support" | "oppose" | "neutral" | "unclear"
+stance: "support" | "oppose" | "neutral" | "unclear"  # "unclear" = model uncertainty; "neutral" = descriptive/no explicit side
 entities: list[str]
 embedding: list[float]              # pgvector column
 confidence: float                   # 0-1
@@ -155,6 +168,17 @@ id: UUID
 user_id: UUID
 cycle_id: UUID
 approved_cluster_ids: list[UUID]
+                                    # v0 storage form; keep vote-approval queries behind db/query helpers for future junction-table migration
+created_at: datetime
+evidence_log_id: int
+```
+
+### PolicyEndorsement
+
+```
+id: UUID
+user_id: UUID
+cluster_id: UUID
 created_at: datetime
 evidence_log_id: int
 ```
@@ -183,7 +207,7 @@ event_type: str                     # submission_received, candidate_created, cl
 entity_type: str
 entity_id: UUID
 payload: dict                       # JSONB — full entity snapshot
-hash: str                           # SHA-256 of payload
+hash: str                           # SHA-256(canonical JSON of {timestamp,event_type,entity_type,entity_id,payload,prev_hash})
 prev_hash: str                      # previous entry's hash (chain)
 ```
 
@@ -289,10 +313,11 @@ collective-will/
 
 - WhatsApp submission intake (Evolution API)
 - Email magic-link verification
-- WhatsApp account linking (HMAC tokenized)
-- Canonicalization (Claude Haiku, cloud)
-- Embeddings (Mistral embed, cloud)
+- WhatsApp account linking (opaque account refs via sealed mapping)
+- Canonicalization (Claude Sonnet, cloud)
+- Embeddings (quality-first cloud model in v0; cost-optimized model switch later via config)
 - Clustering (HDBSCAN, local, batch every 6h)
+- Pre-ballot endorsement/signature stage for cluster qualification
 - Approval voting via WhatsApp
 - Public analytics dashboard (no login wall)
 - User dashboard (submissions, votes, disputes)
@@ -324,4 +349,5 @@ collective-will/
 6. **No eval/exec**: Never execute dynamic code.
 7. **Ruff for formatting**: Run ruff before finishing.
 8. **Never commit secrets**: `.env` is gitignored. No API keys, passwords, or tokens in code.
-9. **OpSec**: No real names in commits/comments/code. No hardcoded paths containing usernames. Tokenize WhatsApp IDs with HMAC — never store raw wa_id in core tables or logs.
+9. **OpSec**: No real names in commits/comments/code. No hardcoded paths containing usernames. Store only opaque account refs in core tables/logs; raw `wa_id` is allowed only in the sealed mapping.
+10. **No per-item human adjudication**: Humans do not manually approve/reject single votes, disputes, or quarantined submissions. They may only change policy/config, architecture, and risk-management controls.

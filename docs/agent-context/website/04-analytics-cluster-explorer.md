@@ -33,7 +33,12 @@ Displays all clusters from the most recent clustering cycle.
 - **Sorting options**: By member count (default), by approval count, by domain
 - **Domain filter**: Filter clusters by PolicyDomain
 
-- **Stats bar at top**: Total submissions, total clusters, active voting cycle (yes/no)
+- **Stats bar at top**: Total submissions, total clusters, unclustered submissions count, active voting cycle (yes/no)
+
+- **Unclustered section** (transparency requirement):
+  - Show count of candidates currently labeled as noise/unclustered
+  - Show a paginated list of anonymized unclustered canonical candidates (title + summary + domain + confidence)
+  - Include explanatory text: these items are retained and may be clustered in future cycles
 
 ### Cluster detail page (`/analytics/clusters/[id]`)
 
@@ -50,6 +55,7 @@ Displays all clusters from the most recent clustering cycle.
 Fetch data from the Python backend:
 - `GET /api/analytics/clusters` → list of clusters with stats
 - `GET /api/analytics/clusters/:id` → single cluster with member candidates
+- `GET /api/analytics/unclustered` → current unclustered/noise candidates + count
 
 Create a typed API client:
 ```typescript
@@ -76,6 +82,11 @@ interface ClusterDetail extends ClusterSummary {
   grouping_rationale?: string;
 }
 
+interface UnclusteredResponse {
+  total: number;
+  items: PolicyCandidatePublic[];
+}
+
 interface PolicyCandidatePublic {
   id: string;
   title: string;
@@ -99,6 +110,7 @@ interface PolicyCandidatePublic {
 - Do NOT show raw submission text. Only the canonicalized form (title + summary).
 - Server-side rendered (SSR) for SEO and fast initial load.
 - Must work well in RTL (Farsi) layout.
+- Unclustered/noise candidates must be visible on analytics (do not hide by default).
 
 ## Tests
 
@@ -108,6 +120,7 @@ Write tests covering:
 - Clicking a cluster card navigates to detail page
 - Cluster detail page shows member candidates
 - Cluster detail page does NOT show user IDs or raw text
+- Unclustered section renders count and anonymized candidate list
 - Empty state renders when no clusters exist
 - Variance flag indicator shows for flagged clusters
 - Sorting by member count works

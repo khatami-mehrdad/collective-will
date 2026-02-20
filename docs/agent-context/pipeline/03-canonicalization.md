@@ -1,13 +1,13 @@
 # Task: Canonicalization Agent
 
 ## Depends on
-- `pipeline/01-llm-abstraction` (complete() with farsi tier)
+- `pipeline/01-llm-abstraction` (complete() with canonicalization tier)
 - `pipeline/02-privacy-strip-metadata` (prepare_batch_for_llm)
 - `database/03-core-models` (Submission, PolicyCandidate models)
 - `database/04-evidence-store` (append_evidence)
 
 ## Goal
-Implement the canonicalization agent that turns freeform Farsi text into structured PolicyCandidate records using Claude Haiku.
+Implement the canonicalization agent that turns freeform Farsi text into structured PolicyCandidate records using Claude Sonnet.
 
 ## Files to create
 
@@ -26,7 +26,7 @@ async def canonicalize_batch(
 
 Steps:
 1. Call `prepare_batch_for_llm(submissions)` to get anonymous texts + index map
-2. For each text, call `complete()` with `tier="farsi"` and the canonicalization prompt
+2. For each text, call `complete()` with `tier="canonicalization"` and the canonicalization prompt
 3. Parse LLM JSON response into PolicyCandidate fields
 4. Handle multi-issue splitting: one submission may produce multiple candidates
 5. Re-link results to submissions via index map
@@ -79,6 +79,7 @@ Store this with every candidate for reproducibility.
 - If LLM returns unparseable JSON: flag submission as `"flagged"`, log error, continue with next
 - If LLM returns empty result: flag submission, log
 - Do not let one bad response stop the entire batch
+- If Sonnet is unavailable after retries, use the canonicalization fallback model configured in the LLM abstraction (`canonicalization_fallback_model`); mark these candidates with a fallback flag for later review.
 
 ## Constraints
 
@@ -86,6 +87,8 @@ Store this with every candidate for reproducibility.
 - The prompt must NOT editorialize. It structures user input, it does not rewrite or reframe.
 - Every candidate must have `model_version` and `prompt_version` set. These are required for audit reproducibility.
 - Candidates with `confidence < 0.7` must be flagged. Do not silently accept low-confidence results.
+- Validate output against a strict JSON schema before creating candidates; schema failures are treated as flagged responses.
+- Canonicalization must request `tier="canonicalization"` only; do not reference provider-specific model IDs in this module.
 
 ## Tests
 

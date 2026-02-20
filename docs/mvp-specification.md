@@ -43,19 +43,20 @@ These decisions are locked for v0. They override any conflicting text elsewhere 
 
 ### AI Models
 
-- **Canonicalization**: Claude Haiku (Farsi -> structured English).
-- **Embeddings**: Mistral `mistral-embed` API (cloud). No local model dependency for v0. Switch to local (e.g. `multilingual-e5-large`) if privacy or cost requires it at scale.
-- **Cluster summaries**: DeepSeek V3.2 API.
-- **User-facing messages**: Claude Haiku (Farsi quality).
+- **Canonicalization**: Claude Sonnet (Farsi -> structured English), fallback configured.
+- **Embeddings**: OpenAI `text-embedding-3-large` (quality-first in v0), with config-backed fallback (e.g., `mistral-embed`) for resilience/cost phases.
+- **Cluster summaries**: `english_reasoning` tier defaults to Claude Sonnet with mandatory fallback (default: DeepSeek `deepseek-chat`).
+- **User-facing messages**: `farsi_messages` tier defaults to Claude Sonnet with mandatory fallback (default: Claude Haiku).
 - **Clustering algorithm**: HDBSCAN (runs locally on returned vectors).
 
 ### Identity and Sybil Resistance
 
 - **Verification path**: email magic-link + WhatsApp account linking. One path, no alternatives in v0.
-- **No mandatory phone verification.** WhatsApp account IDs are tokenized (`HMAC(wa_id, secret_pepper)`); raw identifiers are isolated in a sealed mapping service and stripped from logs/exports.
+- **No mandatory phone verification.** WhatsApp linkage uses random opaque account refs; raw identifiers are isolated in a sealed mapping service and stripped from logs/exports.
 - **No OAuth, no vouching, no KYC.** These add linkage/governance complexity and can exclude high-risk users.
 - **Submission eligibility**: verified account (email + WhatsApp linked) + account age >= 48 hours.
 - **Vote eligibility**: verified account + account age >= 48 hours + at least 1 accepted submission.
+- **Adjudication autonomy**: Individual votes, disputes, and quarantine outcomes are resolved by autonomous agentic workflows (primary model + fallback/ensemble as needed). Humans do not decide per-item outcomes.
 
 ### Abuse Thresholds
 
@@ -63,25 +64,26 @@ These decisions are locked for v0. They override any conflicting text elsewhere 
 |---------|-------|
 | Submissions per account per day | 5 |
 | Accounts per email domain per day | 3 |
-| Burst quarantine trigger | 10+ submissions/hour from one account |
-| Vote changes per cycle | 1 (can update vote once before cycle closes) |
+| Burst quarantine trigger | 3 submissions/5 minutes from one account (soft quarantine: accept + flag for automated adjudication) |
+| Vote changes per cycle | 1 full vote re-submission per cycle (total max: 2 vote submissions/cycle) |
 | Failed verification attempts | 5 per email per 24 hours, then 24-hour lockout |
 
-Quarantined accounts are flagged for manual review. Submissions from quarantined accounts are held (not processed or published) until review.
+Quarantined accounts are handled by policy-driven automated adjudication. Submissions from quarantined accounts are held (not processed or published) until the autonomous resolver applies release/hold rules.
 
 ### Evidence Store
 
 - **Implementation**: PostgreSQL append-only hash-chain table. No UPDATE/DELETE permissions. Insert trigger validates chain integrity.
-- **External anchoring**: Optional for v0 launch. Daily Merkle-root export to Witness.co is recommended but not required before pilot.
+- **External anchoring**: Daily local Merkle-root computation is required in v0. External publication (Witness.co) is optional/config-driven.
 - **Reproducibility metadata**: every evidence entry includes model version, prompt version, clustering parameters, run ID, and random seed where applicable.
 
 ### Dispute Handling
 
 - Users flag bad canonicalization or cluster assignment via their authenticated dashboard.
-- Operator reviews flagged items within 72 hours.
+- Autonomous dispute-resolution workflow targets completion within 72 hours.
 - Disputed items are tagged (`dispute_open`, `dispute_resolved`) but never removed or suppressed.
-- Resolution is logged to the evidence store with operator justification.
-- The operator does not claim editorial authority. Disputes are resolved by re-running the pipeline or adjusting parameters, not by manual override of content.
+- Resolution is logged to the evidence store with resolver model trace (primary/fallback/ensemble path).
+- Disputes are resolved by re-running the pipeline or model escalation/ensemble, not by manual override of content.
+- Humans may tune architecture/policy/risk controls, but do not resolve individual disputes/votes/quarantine cases.
 
 ### Data Retention and Deletion
 
@@ -89,7 +91,7 @@ Quarantined accounts are flagged for manual review. Submissions from quarantined
 |------|-----------|---------------------------|
 | Evidence chain entries | Immutable, permanent | No (integrity of chain) |
 | Account linkage (email, wa_id mapping) | Until deletion request | Yes (GDPR right to erasure) |
-| Tokenized user references in evidence chain | Permanent | No (but unlinkable after account deletion) |
+| Opaque user references in evidence chain | Permanent | No (but unlinkable after account deletion) |
 | Raw submissions | Permanent (in evidence chain) | User link severed on deletion; text preserved anonymously |
 | Votes | Permanent (pseudonymous) | User link severed on deletion |
 
@@ -349,7 +351,7 @@ See [operational-security.md](operational-security.md) for the full risk-tier fr
 5. Detect language (Farsi, English, Kurdish, etc.)
 6. Extract policy concern(s) — may yield multiple candidates from one message
 7. Structure into `PolicyCandidate` schema
-8. Compute semantic embedding via Mistral `mistral-embed` API (batched with canonicalized text)
+8. Compute semantic embedding via configured embedding tier (v0 default: OpenAI `text-embedding-3-large`; fallback configurable)
 9. Store structured result, link back to original submission
 
 **Prompt Strategy**:
@@ -374,7 +376,7 @@ Output JSON schema: {PolicyCandidate}
 | Data separation | Text-only to cloud, user links stay local | Protects user identity while enabling AI processing |
 | Multi-issue handling | Split into separate candidates | Research shows joint prediction works; preserves granularity |
 | Language | Process in original language, translate for display | Preserves nuance; translation happens at display time |
-| Confidence threshold | <0.7 confidence → flag for review | Better to surface uncertainty than silently fail |
+| Confidence threshold | <0.7 confidence -> automated escalation/fallback path | Better to surface uncertainty than silently fail |
 | Schema rigidity | Hybrid (required core + flexible extensions) | Balance between consistency and expressiveness |
 
 #### 3.2.2 Clustering Agent
@@ -383,9 +385,9 @@ Output JSON schema: {PolicyCandidate}
 **Output**: `Cluster` records with summaries
 
 **Technology**:
-- **Embeddings**: Mistral `mistral-embed` API (cloud) — no local model dependency for v0; switch to local embeddings if privacy or cost requires it at scale
+- **Embeddings**: configured embedding tier (v0 default: OpenAI `text-embedding-3-large`, cloud) with fallback path for resilience/cost modes
 - **Clustering**: HDBSCAN (density-based, no need to specify K) — runs locally on returned vectors
-- **Summarization**: Anthropic Claude or Mistral API (cloud) — receives only aggregated/anonymized cluster content, not individual submissions
+- **Summarization**: `english_reasoning` tier (v0 default Sonnet with mandatory fallback) — receives only aggregated/anonymized cluster content, not individual submissions
 
 **Processing Steps**:
 1. Load all candidates from current cycle (or delta since last run)
@@ -480,10 +482,10 @@ CREATE INDEX idx_evidence_hash ON evidence_log(hash);
 CREATE INDEX idx_evidence_entity ON evidence_log(entity_type, entity_id);
 ```
 
-**Witness.co Integration** (optional for v0):
-- Daily job: compute Merkle root of day's evidence entries
-- Submit root to Witness.co for Ethereum anchoring
-- Store anchor receipt in evidence_log
+**Witness.co Integration** (config-driven publication):
+- Daily job must compute local Merkle root of day's evidence entries (required in v0)
+- If publishing is enabled, submit root to Witness.co for anchoring
+- Store publish attempt/result and anchor receipt in evidence metadata
 
 **Design Decisions**:
 
@@ -491,7 +493,7 @@ CREATE INDEX idx_evidence_entity ON evidence_log(entity_type, entity_id);
 |----------|--------|-----------|
 | Database | PostgreSQL | Mature, pgvector for embeddings, JSONB flexibility |
 | Evidence store | Embedded hash-chain table | Simpler than separate system; sufficient for v0 scale |
-| Blockchain anchoring | Optional via Witness.co | External tamper evidence without running infrastructure |
+| Blockchain anchoring | Required local roots; optional Witness publish | Keeps anchoring logic active while avoiding external dependency lock-in |
 | Embedding storage | pgvector extension | Keep embeddings with data; similarity search built-in |
 
 ---
@@ -621,7 +623,7 @@ interface User {
   
   // Messaging account (v0: WhatsApp only)
   messagingPlatform: 'whatsapp';    // Post-v0: 'whatsapp' | 'telegram' | 'signal'
-  messagingAccountRef: string;      // HMAC(wa_id, secret_pepper) — raw ID never stored in core tables
+  messagingAccountRef: string;      // Random opaque account ref; raw wa_id stays in sealed mapping
   messagingVerified: boolean;
   messagingAccountAge?: Date;       // For sybil scoring
   
@@ -680,7 +682,7 @@ interface PolicyCandidate {
   entities: string[];               // Named entities mentioned
   
   // For clustering
-  embedding: number[];              // Vector from Mistral mistral-embed API
+  embedding: number[];              // Vector from configured embedding tier (v0 default OpenAI text-embedding-3-large)
   
   // Quality signals
   confidence: number;               // LLM confidence 0-1
@@ -808,7 +810,7 @@ interface EvidenceLogEntry {
   
   payload: object;                  // Full snapshot of entity at this point
   
-  hash: string;                     // SHA-256(JSON.stringify(payload))
+  hash: string;                     // SHA-256(canonical JSON of {timestamp,event_type,entity_type,entity_id,payload,prev_hash})
   prevHash: string;                 // Previous entry's hash (chain)
 }
 ```
@@ -918,7 +920,7 @@ Cron trigger (every 6 hours)
 ### 5.4 Voting Flow
 
 ```
-Voting cycle starts (manual or scheduled)
+Voting cycle starts (autonomous schedule/policy trigger)
         │
         ▼
    Agenda Builder selects clusters
@@ -1000,7 +1002,7 @@ User visits /dashboard
 | **Website** | Next.js (TypeScript) | SSR, React, good i18n |
 | **Hosting** | Single VPS (Njalla or 1984.is) | Privacy-first; WHOIS hides owner; see [Frozen Decisions](#v0-frozen-decisions) |
 | **Cloud LLM** | Anthropic Claude or Mistral API | EU/US providers with strong privacy posture |
-| **Embeddings** | Mistral `mistral-embed` API (cloud) | No local model dependency; simplest v0 path; switch to local at scale |
+| **Embeddings** | OpenAI `text-embedding-3-large` (cloud, config-backed fallback) | Quality-first in v0; fallback/cost tuning via config |
 
 **LLM Strategy**: Cloud-first for MVP. Local GPU infrastructure deferred until critical mass justifies the complexity. See [Section 7.3](#73-why-cloud-first-for-mvp) for rationale and data separation approach.
 
@@ -1382,7 +1384,7 @@ The key concern with cloud LLMs is privacy for users inside Iran whose political
 - Batched and shuffled to break timing correlation
 - Cluster summaries (aggregated content, not individual voices)
 
-**Note on embeddings**: v0 uses Mistral `mistral-embed` API (cloud) for simplicity. The text sent for embedding is the same anonymized canonicalized text already sent for canonicalization — no additional privacy exposure. Switch to local embeddings (e.g. `multilingual-e5-large`) if privacy requirements escalate at scale.
+**Note on embeddings**: v0 uses a quality-first cloud embedding tier (default OpenAI `text-embedding-3-large`) with config-backed fallback. The text sent for embedding is the same anonymized canonicalized text already sent for canonicalization — no additional privacy exposure.
 
 **Provider selection criteria:**
 | Provider | Jurisdiction | Data Handling | Recommendation |
@@ -1447,9 +1449,9 @@ Per research: Iranian SIAM system uses phone numbers for surveillance. Platform 
 
 **v0 identity model** (see [Frozen Decisions](#v0-frozen-decisions)):
 - Email magic-link verification
-- WhatsApp account linking (tokenized via HMAC; raw wa_id isolated in sealed mapping service)
+- WhatsApp account linking (random opaque account refs; raw wa_id isolated in sealed mapping service)
 - Account age threshold (48 hours) before submissions
-- Contribution threshold (1+ accepted submission) before voting
+- Contribution threshold (1+ accepted contribution) before voting (processed submission or pre-ballot endorsement)
 - No OAuth, no vouching, no KYC — these add linkage/governance complexity and exclude high-risk users
 
 ---
@@ -1507,9 +1509,9 @@ Per research: Iranian SIAM system uses phone numbers for surveillance. Platform 
 | Vouching / progressive trust | Governance complexity; deferred |
 | Quadratic/conviction voting | Start simple, iterate |
 | Federation/decentralization | Single server sufficient for pilot |
-| Blockchain anchoring (required) | Optional for v0; can require later |
+| Blockchain anchoring (external publication required) | Daily local Merkle computation required in v0; external publication can be required later |
 | Mobile app | Website + messaging app sufficient |
-| AI-generated translations | Start with human review |
+| AI-generated translations | Use automated quality checks + fallback/ensemble; no per-item human review |
 | Demographic collection | Privacy concerns; add carefully later |
 | Bridging algorithm | Can add after basic voting works |
 
@@ -1547,7 +1549,7 @@ The following are now locked. See [v0 Frozen Decisions](#v0-frozen-decisions):
 
 6. **Optimal clustering frequency** — 6 hours to start; could go to real-time if needed.
 
-7. **Translation strategy** — LLM auto-translate vs. human review vs. community edit.
+7. **Translation strategy** — LLM auto-translate vs. automated QA/fallback vs. community edit.
 
 8. **Demographic insights** — If/when/how to collect and display.
 

@@ -3,11 +3,11 @@
 ## Depends on
 - `pipeline/01-llm-abstraction` (complete() with english_reasoning tier)
 - `pipeline/05-hdbscan-clustering` (clusters exist with member candidates)
-- `database/03-core-models` (Cluster, PolicyCandidate models)
+- `database/03-core-models` (Cluster, PolicyCandidate, PolicyEndorsement models)
 - `database/04-evidence-store` (append_evidence)
 
 ## Goal
-Generate human-readable summaries for each cluster using DeepSeek V3.2, then build the voting agenda from clusters meeting the size threshold.
+Generate human-readable summaries for each cluster using the quality-first `english_reasoning` model (v0 default: Claude Sonnet), then build the voting agenda using a multi-stage gate: size threshold first, endorsement-signature threshold second.
 
 ## Files to create
 
@@ -33,6 +33,7 @@ Steps:
    - Do NOT include individual submission IDs, user references, or metadata
    - Call `complete()` with `tier="english_reasoning"` and summarization prompt
    - Parse response into `summary` (Farsi) and `summary_en` (English)
+   - If primary `english_reasoning` model fails after retries, use mandatory fallback (`english_reasoning_fallback_model`) and mark output with fallback metadata for audit/review
 2. Update cluster records with summaries
 3. Return updated clusters
 
@@ -65,6 +66,7 @@ async def build_agenda(
     cycle_id: UUID,
     db: AsyncSession,
     min_size: int = 5,
+    min_endorsements: int = 5,
 ) -> list[UUID]:
     """Select clusters for voting. Returns list of cluster IDs."""
 ```
@@ -72,9 +74,11 @@ async def build_agenda(
 Steps:
 1. Load all clusters for this cycle
 2. Filter to clusters with `member_count >= min_size`
-3. Include ALL qualifying clusters — no editorial selection, no ranking, no filtering by topic
-4. Log `cycle_opened` preparation to evidence store (the actual cycle_opened event is logged by the voting service)
-5. Return the list of qualifying cluster IDs
+3. For remaining clusters, count distinct `PolicyEndorsement.user_id` signatures on each cluster
+4. Keep only clusters with endorsement_count >= `min_endorsements`
+5. Include ALL qualifying clusters — no editorial selection, no ranking, no filtering by topic
+6. Log agenda-preparation evidence with qualifying/disqualified counts (the actual cycle_opened event is logged by the voting service)
+7. Return the list of qualifying cluster IDs
 
 ### Cluster domain assignment
 
@@ -89,9 +93,10 @@ def determine_cluster_domain(candidates: list[PolicyCandidate]) -> PolicyDomain:
 ## Constraints
 
 - Only aggregated/anonymized content is sent to the LLM. Never individual submissions or user data.
-- ALL clusters meeting the size threshold go to voting. No editorial filtering. This is a frozen decision.
+- Ballot inclusion requires BOTH gates: size threshold and endorsement-signature threshold. No editorial filtering beyond these gates.
 - Small clusters (below threshold) are NOT deleted. They remain visible on the analytics dashboard but don't appear in the voting ballot.
-- The summarization prompt asks for Farsi output. If DeepSeek's Farsi quality is poor, the pipeline can fall back to getting an English summary and translating via Claude Haiku. Implement this as a configurable option.
+- Summary generation must always have a fallback path configured for risk management (`english_reasoning_fallback_model`).
+- Keep provider/model choice behind `tier="english_reasoning"` only; this module must not hardcode provider model IDs.
 
 ## Tests
 
@@ -103,11 +108,13 @@ Write tests in `tests/test_pipeline/test_summarize.py` and `tests/test_pipeline/
 - Aggregated text sent to LLM contains member titles/summaries but no user IDs (mock, inspect prompt)
 - LLM returning invalid JSON: cluster flagged, no crash
 - Summary stored in both Farsi and English fields
+- Primary summary model failure triggers configured fallback model path
 
 **Agenda:**
-- Clusters with member_count >= 5 included in agenda
+- Clusters with member_count >= 5 and endorsements >= threshold included in agenda
 - Clusters with member_count < 5 excluded
+- Clusters meeting size but missing endorsement threshold are excluded from ballot
 - Empty cluster set returns empty agenda
-- All qualifying clusters included (no filtering beyond size)
+- All qualifying clusters included (no filtering beyond size + endorsements)
 - `determine_cluster_domain()` returns most common domain
 - Domain tie-breaking is deterministic
