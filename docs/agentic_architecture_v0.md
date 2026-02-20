@@ -1,10 +1,10 @@
-## Agentic Architecture & Modular Skills Design
+## Agentic Architecture & Modular Skills Design (v0)
 
-Version: v0 baseline (accepted) + v1 hardening plan
+Status: Accepted baseline
 
 ---
 
-# 1. Architectural Philosophy (v0)
+# 1. Architectural Philosophy
 
 Collective Will follows a **small orchestration core + modular skills**
 architecture.
@@ -21,7 +21,7 @@ architecture.
 
 ---
 
-# 2. High-Level Architecture (v0)
+# 2. High-Level Architecture
 
 ```text
 WhatsApp (Evolution API)
@@ -37,7 +37,7 @@ logic lives in composable skills.
 
 ---
 
-# 3. Orchestration Core (v0)
+# 3. Orchestration Core (Minimal Brain)
 
 ## Responsibilities
 
@@ -58,7 +58,7 @@ Everything else is modular.
 
 ---
 
-# 4. Skill Model (v0)
+# 4. Skill Model
 
 Each skill:
 
@@ -70,7 +70,7 @@ Each skill:
 
 ---
 
-# 5. Skill Catalog (v0)
+# 5. Skill Catalog
 
 ## A. Channel skills (WhatsApp)
 
@@ -260,7 +260,7 @@ Each skill:
 
 ---
 
-# 6. Evidence Event Types (v0)
+# 6. Evidence Event Types
 
 - `submission_received`
 - `candidate_created`
@@ -293,98 +293,7 @@ Everything else is layered incrementally.
 
 ---
 
-# 8. v1 Hardening Plan
-
-v1 keeps the v0 shape and adds stronger reliability, reproducibility, and
-governance guarantees.
-
-## 8.1 Deterministic runtime contract
-
-- Pin image digest, Python/runtime versions, and model versions
-- Fix locale, timezone, and numeric precision defaults
-- Persist every run input and parameter set
-- Store a `reproducibility_fingerprint` per run
-
-## 8.2 Skill execution contract (required for every skill)
-
-- `idempotency_key` on every mutating command
-- Retry policy: max attempts, exponential backoff, failure class
-- Timeout and cancellation behavior
-- Compensating action or dead-letter route
-- Required emitted evidence events
-
-## 8.3 Queueing, ordering, and backpressure
-
-- At-least-once delivery support for webhooks
-- Deduplication on `message_id` + source
-- Dead-letter queue for poison messages
-- Worker concurrency limits per skill category
-- Backpressure policy during surge windows
-
-## 8.4 State machines for critical entities
-
-### Submission
-
-`received -> pending -> canonicalized -> clustered -> published | disputed`
-
-### Candidate
-
-`generated -> validated -> accepted | rejected`
-
-### Cycle
-
-`scheduled -> open -> closed -> tallied -> published`
-
-### Dispute
-
-`opened -> queued -> rerun_requested -> resolved`
-
-## 8.5 Evidence integrity upgrades
-
-- Add signature metadata (`signing_key_id`, `signature`)
-- Nightly chain verification job with alerting
-- External anchoring cadence (daily or weekly Merkle root)
-- Immutable audit report exports for each cycle
-
-## 8.6 Sybil and abuse defense upgrades
-
-- Progressive trust tiers for new accounts
-- Behavioral anomaly scoring (velocity, duplication, burst patterns)
-- Quarantine review workflow with evidence-backed reasons
-- Measurable false-positive/false-negative tracking
-
-## 8.7 Observability and SLOs
-
-- Pipeline latency SLOs (ingest -> canonicalize -> cluster -> publish)
-- Error budget for skill failures
-- Cost SLO per cycle and per active user
-- Drift alerts for canonicalization/clustering instability
-
-## 8.8 v1 additional skills (planned)
-
-38. `Queue.DedupeAndAck`  
-39. `Queue.DeadLetterReplay`  
-40. `Run.ReproducibilityFingerprint`  
-41. `Evidence.SignEvent`  
-42. `Evidence.VerifyNightly`  
-43. `Risk.ScoreBehavior`  
-44. `Ops.EmitSLOMetrics`
-
----
-
-# 9. Threat Model Snapshot (v1)
-
-| Threat | Primary control | Detection signal | Residual risk |
-| --- | --- | --- | --- |
-| Duplicate webhook replay | `Queue.DedupeAndAck` | Rising dedupe ratio | Medium |
-| Coordinated sybil voting | Trust tiers + anomaly scoring | Vote burst by related accounts | Medium |
-| Silent operator manipulation | Rerun-only dispute policy + evidence signatures | Hash/signature mismatch | Low |
-| LLM output drift | Version pinning + variance checks | Instability flag trend | Medium |
-| PII leakage to LLM | `Privacy.RedactionGuard` + text-only payload | Redaction violations | Low |
-
----
-
-# 10. Design Intent
+# 8. Design Intent
 
 Collective Will must be:
 
